@@ -10,6 +10,7 @@ import { listChatMessages, saveChatMessage } from "@/lib/models/chat";
 // knowledge files from the filesystem, talks to the OpenAI API, and (via
 // the create_task tool) writes to the SQLite task database.
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   const conversationId = req.nextUrl.searchParams.get("conversationId");

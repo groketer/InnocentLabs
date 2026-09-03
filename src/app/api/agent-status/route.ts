@@ -3,6 +3,7 @@ import { computeAgentStatus } from "@/lib/models/agentStatus";
 import { LOCAL_USER_ID } from "@/lib/localUser";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {

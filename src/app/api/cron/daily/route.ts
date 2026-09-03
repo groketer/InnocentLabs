@@ -3,6 +3,7 @@ import { ensureDailyPortfolioRefresh } from "@/lib/taskEngine/portfolioScheduler
 import { tick } from "@/lib/taskEngine/engine";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /**
  * Vercel Cron target — see vercel.json ("crons").

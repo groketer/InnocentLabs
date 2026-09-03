@@ -4,6 +4,7 @@ import { logActivity } from "@/lib/models/activity";
 import { LOCAL_USER_ID } from "@/lib/localUser";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /**
  * DEV/TESTING ONLY. Creates a task exactly the way the create_task agent

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { tick } from "@/lib/taskEngine/engine";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 /**
  * Locally, this is a dev/testing convenience only — the engine already

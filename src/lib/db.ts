@@ -4,19 +4,25 @@
  * MILESTONE 3E — VERCEL POSTGRES / NEON:
  *
  * This started on `better-sqlite3` (local file only), briefly moved to
- * `@libsql/client`/Turso (chosen for minimal SQL-dialect drift), and has
- * now moved again to Postgres via `@neondatabase/serverless`, because the
- * person deploying this couldn't reach turso.tech from their network and
- * asked to pivot to Vercel's native Postgres/Neon integration instead.
+ * `@libsql/client`/Turso (chosen for minimal SQL-dialect drift), then to
+ * Postgres via `@neondatabase/serverless`'s WebSocket-based `Pool` — and
+ * THAT then turned out to be the wrong choice for classic (non-Fluid)
+ * Vercel serverless functions: a `Pool` holds one persistent WebSocket
+ * connection, cached here across invocations for reuse, but Vercel freezes
+ * a function's execution between requests and doesn't guarantee the
+ * WebSocket survives that freeze cleanly. In production this surfaced as
+ * "Client has encountered a connection error and is not queryable",
+ * ECONNRESET, and — most confusingly — a `TypeError: t.mask is not a
+ * function` crash from a stale `ws` keepalive timer firing against an
+ * already-torn-down socket after a freeze/thaw cycle.
  *
- * IMPORTANT — what this means locally:
- * Unlike SQLite/libSQL, Postgres has no "just point at a local file" mode.
- * Local development now requires a real Postgres connection string in
- * DATABASE_URL (or POSTGRES_URL) — either a free Neon database (same one
- * you'll use in production, or a separate branch) or a local Postgres
- * instance (Docker/native install). There is no offline fallback anymore.
+ * The fix: use Neon's HTTP query mode instead (`neon()`/`sql.query()`),
+ * which is a plain `fetch()` per query with no persistent connection and
+ * therefore nothing that can go stale between invocations — this is also
+ * what Neon's own docs recommend for serverless functions without Vercel's
+ * newer Fluid compute. This removed the `ws` dependency entirely.
  *
- * WHY THE MODEL/EXECUTOR FILES DIDN'T NEED TO CHANGE AGAIN:
+ * WHY THE MODEL/EXECUTOR FILES DIDN'T NEED TO CHANGE AGAIN (SEE BELOW):
  * Every model file already calls `db.execute({ sql, args })` using EITHER
  * `?` positional placeholders with an array, OR `@name` named placeholders
  * with an object — that's the libSQL/better-sqlite3 calling convention.
@@ -26,6 +32,8 @@
  * `{ sql, args }` call sites work unchanged against Postgres. This is the
  * one deliberate abstraction in an otherwise plain, un-clever data layer —
  * it exists specifically to avoid a second full rewrite of the model layer.
+ * It also meant swapping the WebSocket Pool for the HTTP driver above only
+ * required changing this one file, not every caller.
  *
  * Everything else (schema, migrations) IS Postgres-specific SQL, because
  * PRAGMA table_info(), strftime(), and SQLite's type affinity don't exist
@@ -35,12 +43,7 @@
  * SQL — see the comments there).
  */
 
-import { Pool, neonConfig } from "@neondatabase/serverless";
-import ws from "ws";
-
-// The Neon serverless driver needs a WebSocket implementation to support
-// pooled connections/transactions outside a browser or edge runtime.
-neonConfig.webSocketConstructor = ws;
+import { neon } from "@neondatabase/serverless";
 
 export type InArgs = unknown[] | Record<string, unknown>;
 
@@ -64,8 +67,6 @@ export interface Db {
 declare global {
   // eslint-disable-next-line no-var
   var __innocentIntelligenceDb: Promise<Db> | undefined;
-  // eslint-disable-next-line no-var
-  var __innocentIntelligencePool: Pool | undefined;
 }
 
 /**
@@ -138,18 +139,21 @@ function resolveConnectionString(): string {
 }
 
 async function createConnection(): Promise<Db> {
-  const pool = new Pool({ connectionString: resolveConnectionString() });
-  global.__innocentIntelligencePool = pool;
+  // fullResults: true makes every query return { rows, rowCount, ... }
+  // (matching what our QueryResult/rowsAffected shape expects) instead of
+  // a bare array of rows, which is the driver's default for the plain
+  // template-tag form.
+  const sql = neon(resolveConnectionString(), { fullResults: true });
 
   const db: Db = {
     async execute<T>(
       input: { sql: string; args?: InArgs } | string
     ): Promise<QueryResult<T>> {
-      const { sql, args } =
+      const { sql: sqlText, args } =
         typeof input === "string" ? { sql: input, args: undefined } : input;
 
-      const { text, values } = toPositional(sql, args);
-      const result = await pool.query(text, values);
+      const { text, values } = toPositional(sqlText, args);
+      const result = await sql(text, values);
 
       return {
         rows: result.rows as T[],
@@ -158,26 +162,15 @@ async function createConnection(): Promise<Db> {
     },
 
     async batch(statements, _mode) {
-      const client = await pool.connect();
+      // Neon's HTTP driver has no persistent session, so batching means a
+      // single non-interactive transaction request rather than BEGIN/COMMIT
+      // over a held connection — see sql.transaction() in Neon's docs.
+      const queries = statements.map((statement) => {
+        const { text, values } = toPositional(statement.sql, statement.args);
+        return sql(text, values);
+      });
 
-      try {
-        await client.query("BEGIN");
-
-        for (const statement of statements) {
-          const { text, values } = toPositional(
-            statement.sql,
-            statement.args
-          );
-          await client.query(text, values);
-        }
-
-        await client.query("COMMIT");
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      } finally {
-        client.release();
-      }
+      await sql.transaction(queries);
     },
   };
 

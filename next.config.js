@@ -13,6 +13,16 @@ const nextConfig = {
   experimental: {
     instrumentationHook: true,
   },
+
+  // MILESTONE 3E — VERCEL POSTGRES:
+  // `ws` (used by @neondatabase/serverless's Pool for its WebSocket
+  // connection) contains a low-level buffer-masking routine that Next.js's
+  // build-time bundler corrupts if left to bundle/transform it normally —
+  // this surfaces at runtime as "TypeError: t.mask is not a function".
+  // Marking both packages as external keeps them as plain node_modules
+  // requires in the deployed serverless function instead of being run
+  // through webpack, which avoids the corruption.
+  serverExternalPackages: ["ws", "@neondatabase/serverless"],
 };
 
 module.exports = nextConfig;

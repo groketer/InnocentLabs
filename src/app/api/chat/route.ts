@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest) {
   const conversationId = req.nextUrl.searchParams.get("conversationId");
   if (!conversationId) return NextResponse.json({ error: "conversationId is required." }, { status: 400 });
-  return NextResponse.json({ messages: listChatMessages(conversationId, LOCAL_USER_ID) });
+  return NextResponse.json({ messages: await listChatMessages(conversationId, LOCAL_USER_ID) });
 }
 
 interface ChatMessage {
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
   const conversationId = body.conversationId ?? "default";
 
   try {
-    saveChatMessage({ conversation_id: conversationId, user_id: LOCAL_USER_ID, role: "user", content: message });
+    await saveChatMessage({ conversation_id: conversationId, user_id: LOCAL_USER_ID, role: "user", content: message });
     // 3. Load the (currently file-based) knowledge layer.
     const knowledgeBase = await loadKnowledgeBase();
 
@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
     }
 
     const reply = result.finalOutput ?? "";
-    saveChatMessage({ conversation_id: conversationId, user_id: LOCAL_USER_ID, role: "assistant", content: reply });
+    await saveChatMessage({ conversation_id: conversationId, user_id: LOCAL_USER_ID, role: "assistant", content: reply });
     return NextResponse.json({
       reply,
       tasksCreated,

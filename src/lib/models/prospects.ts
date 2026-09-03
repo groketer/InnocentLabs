@@ -34,6 +34,7 @@
 
 import { randomUUID } from "crypto";
 import { getDb } from "../db";
+import type { InArgs } from "@/lib/db";
 
 export type ProspectType =
   | "person"
@@ -486,9 +487,9 @@ function mapProspectRow(
  * The prospecting executor will be upgraded separately to make email-first
  * prospect discovery the operational rule for task-generated prospects.
  */
-export function createProspect(
+export async function createProspect(
   input: CreateProspectInput
-): Prospect {
+): Promise<Prospect> {
   const userId = requiredString(
     input.user_id,
     "Prospect user_id",
@@ -616,127 +617,130 @@ if (
     input.unknowns ?? []
   );
 
-  const db = getDb();
+  const db = await getDb();
 
   const id = randomUUID();
 
-  const stmt = db.prepare(`
-    INSERT INTO prospects (
+  await db.execute({
+    sql: `
+      INSERT INTO prospects (
+        id,
+        user_id,
+        source_task_id,
+        name,
+        organization,
+        role,
+        email,
+        prospect_type,
+        qualification_status,
+        website,
+        public_profile_url,
+        product_id,
+        fit_reason,
+        opportunity_signal,
+        evidence,
+        confidence,
+        unknowns
+      )
+      VALUES (
+        @id,
+        @user_id,
+        @source_task_id,
+        @name,
+        @organization,
+        @role,
+        @email,
+        @prospect_type,
+        @qualification_status,
+        @website,
+        @public_profile_url,
+        @product_id,
+        @fit_reason,
+        @opportunity_signal,
+        @evidence,
+        @confidence,
+        @unknowns
+      )
+    `,
+    args: {
       id,
-      user_id,
-      source_task_id,
+
+      user_id: userId,
+
+      source_task_id:
+        optionalString(
+          input.source_task_id,
+          200
+        ) ?? null,
+
       name,
-      organization,
-      role,
-      email,
-      prospect_type,
-      qualification_status,
-      website,
-      public_profile_url,
-      product_id,
-      fit_reason,
-      opportunity_signal,
-      evidence,
-      confidence,
-      unknowns
-    )
-    VALUES (
-      @id,
-      @user_id,
-      @source_task_id,
-      @name,
-      @organization,
-      @role,
-      @email,
-      @prospect_type,
-      @qualification_status,
-      @website,
-      @public_profile_url,
-      @product_id,
-      @fit_reason,
-      @opportunity_signal,
-      @evidence,
-      @confidence,
-      @unknowns
-    )
-  `);
 
-  stmt.run({
-    id,
+      organization:
+        optionalString(
+          input.organization,
+          MAX_NAME_LENGTH
+        ) ?? null,
 
-    user_id: userId,
+      role:
+        optionalString(
+          input.role,
+          MAX_NAME_LENGTH
+        ) ?? null,
 
-    source_task_id:
-      optionalString(
-        input.source_task_id,
-        200
-      ) ?? null,
+      email:
+        email ?? null,
 
-    name,
+      prospect_type:
+        input.prospect_type,
 
-    organization:
-      optionalString(
-        input.organization,
-        MAX_NAME_LENGTH
-      ) ?? null,
+      qualification_status:
+        qualificationStatus,
 
-    role:
-      optionalString(
-        input.role,
-        MAX_NAME_LENGTH
-      ) ?? null,
+      website:
+        optionalString(
+          input.website,
+          MAX_TEXT_LENGTH
+        ) ?? null,
 
-    email:
-      email ?? null,
+      public_profile_url:
+        optionalString(
+          input.public_profile_url,
+          MAX_TEXT_LENGTH
+        ) ?? null,
 
-    prospect_type:
-      input.prospect_type,
+      product_id:
+        productId ?? null,
 
-    qualification_status:
-      qualificationStatus,
+      fit_reason:
+        fitReason,
 
-    website:
-      optionalString(
-        input.website,
-        MAX_TEXT_LENGTH
-      ) ?? null,
+      opportunity_signal:
+        opportunitySignal,
 
-    public_profile_url:
-      optionalString(
-        input.public_profile_url,
-        MAX_TEXT_LENGTH
-      ) ?? null,
+      evidence:
+        JSON.stringify(evidence),
 
-    product_id:
-      productId ?? null,
+      confidence:
+        input.confidence ?? null,
 
-    fit_reason:
-      fitReason,
-
-    opportunity_signal:
-      opportunitySignal,
-
-    evidence:
-      JSON.stringify(evidence),
-
-    confidence:
-      input.confidence ?? null,
-
-    unknowns:
-      JSON.stringify(unknowns),
+      unknowns:
+        JSON.stringify(unknowns),
+    },
   });
 
-  const row = db
-    .prepare(`
+  const result = await db.execute({
+    sql: `
       SELECT *
       FROM prospects
       WHERE id = ?
         AND user_id = ?
-    `)
-    .get(
-      id,
-      userId
-    ) as Record<string, unknown> | undefined;
+    `,
+    args: [id, userId],
+  });
+
+  const row = result.rows[0] as unknown as
+    | Record<string, unknown>
+    | undefined;
 
   if (!row) {
     throw new Error(
@@ -757,10 +761,10 @@ if (
  * Ownership is part of the query itself so a prospect belonging to another
  * user can never be returned accidentally.
  */
-export function getProspectById(
+export async function getProspectById(
   userId: string,
   id: string
-): Prospect | null {
+): Promise<Prospect | null> {
   const normalizedUserId = userId.trim();
   const normalizedId = id.trim();
 
@@ -771,20 +775,22 @@ export function getProspectById(
     return null;
   }
 
-  const db = getDb();
+  const db = await getDb();
 
-  const row = db
-    .prepare(`
+  const result = await db.execute({
+    sql: `
       SELECT *
       FROM prospects
       WHERE id = ?
         AND user_id = ?
       LIMIT 1
-    `)
-    .get(
-      normalizedId,
-      normalizedUserId
-    ) as Record<string, unknown> | undefined;
+    `,
+    args: [normalizedId, normalizedUserId],
+  });
+
+  const row = result.rows[0] as unknown as
+    | Record<string, unknown>
+    | undefined;
 
   return row
     ? mapProspectRow(row)
@@ -797,7 +803,7 @@ export function getProspectById(
  * All filters are parameterized. The LIMIT value is normalized to prevent
  * invalid or unexpectedly large queries.
  */
-export function listProspects(
+export async function listProspects(
   userId: string,
   options?: {
     limit?: number;
@@ -805,7 +811,7 @@ export function listProspects(
     prospect_type?: ProspectType;
     product_id?: string;
   }
-): Prospect[] {
+): Promise<Prospect[]> {
   const normalizedUserId =
     userId.trim();
 
@@ -813,7 +819,7 @@ export function listProspects(
     return [];
   }
 
-  const db = getDb();
+  const db = await getDb();
 
   const requestedLimit =
     typeof options?.limit === "number" &&
@@ -888,17 +894,20 @@ export function listProspects(
       productId;
   }
 
-  const rows = db
-    .prepare(`
+  const result = await db.execute({
+    sql: `
       SELECT *
       FROM prospects
       WHERE ${conditions.join(" AND ")}
       ORDER BY created_at DESC
       LIMIT @limit
-    `)
-    .all(parameters) as Array<
-      Record<string, unknown>
-    >;
+    `,
+    args: parameters as InArgs,
+  });
+
+  const rows = result.rows as unknown as Array<
+    Record<string, unknown>
+  >;
 
   return rows.map(mapProspectRow);
 }

@@ -9,7 +9,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const task = pauseTask(params.id, LOCAL_USER_ID);
+    const task = await pauseTask(params.id, LOCAL_USER_ID);
     return NextResponse.json({ task });
   } catch (error) {
     if (error instanceof TaskActionError) {

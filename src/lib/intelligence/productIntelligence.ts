@@ -102,8 +102,8 @@ function parseUnknowns(value: string | null): string[] {
     .filter(Boolean);
 }
 
-function findLatestAudit(product: Product): StoredTask | null {
-  const db = getDb();
+async function findLatestAudit(product: Product): Promise<StoredTask | null> {
+  const db = await getDb();
 
   /*
    * Website audits are stored as parent tasks and/or subtasks.
@@ -112,8 +112,8 @@ function findLatestAudit(product: Product): StoredTask | null {
    * assuming a particular task hierarchy. This allows the retrieval layer
    * to work with both portfolio audits and individually requested audits.
    */
-  const rows = db
-    .prepare(`
+  const result = await db.execute({
+    sql: `
       SELECT
         id,
         title,
@@ -135,15 +135,18 @@ function findLatestAudit(product: Product): StoredTask | null {
         )
         AND status IN ('COMPLETED', 'COMPLETED_WITH_ISSUES')
       ORDER BY COALESCE(completed_at, created_at) DESC
-    `)
-    .all({
+    `,
+    args: {
       exact_title: product.name,
       audit_title: `Audit ${product.name}`,
       url_pattern: product.url
         ? `%${product.url}%`
         : `%__NO_URL__%`,
       product_pattern: `%${product.name}%`,
-    }) as StoredTask[];
+    },
+  });
+
+  const rows = result.rows as unknown as StoredTask[];
 
   return rows[0] ?? null;
 }
@@ -155,16 +158,16 @@ function findLatestAudit(product: Product): StoredTask | null {
  * This function does not perform a new audit.
  * It retrieves persisted intelligence only.
  */
-export function getProductIntelligence(
+export async function getProductIntelligence(
   productName: string
-): ProductIntelligence | null {
-  const product = getProductByName(productName.trim());
+): Promise<ProductIntelligence | null> {
+  const product = await getProductByName(productName.trim());
 
   if (!product) {
     return null;
   }
 
-  const auditTask = findLatestAudit(product);
+  const auditTask = await findLatestAudit(product);
 
   const auditResult = auditTask
     ? parseResultJson(auditTask.result_json)

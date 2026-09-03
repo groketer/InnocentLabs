@@ -1,5 +1,12 @@
+/**
+ * MILESTONE 3E — VERCEL:
+ * Async because the underlying @libsql/client connection is async.
+ * See src/lib/db.ts.
+ */
+
 import { randomUUID } from "crypto";
 import { getDb } from "@/lib/db";
+import type { InArgs } from "@/lib/db";
 import type { ActivityEvent, ActivityEventType } from "@/lib/types";
 
 export interface LogActivityInput {
@@ -24,8 +31,10 @@ export interface LogActivityInput {
  * lineage even though activity_events currently stores only task_id as a
  * first-class relational column.
  */
-export function logActivity(input: LogActivityInput): ActivityEvent {
-  const db = getDb();
+export async function logActivity(
+  input: LogActivityInput
+): Promise<ActivityEvent> {
+  const db = await getDb();
   const id = randomUUID();
   const timestamp = new Date().toISOString();
 
@@ -55,8 +64,8 @@ export function logActivity(input: LogActivityInput): ActivityEvent {
             : "info"
     );
 
-  db.prepare(
-    `INSERT INTO activity_events (
+  await db.execute({
+    sql: `INSERT INTO activity_events (
       id,
       user_id,
       task_id,
@@ -75,21 +84,25 @@ export function logActivity(input: LogActivityInput): ActivityEvent {
       @metadata,
       @severity,
       @created_at
-    )`
-  ).run({
-    id,
-    user_id: input.user_id,
-    task_id: input.task_id ?? null,
-    event_type: input.event_type,
-    message: input.message,
-    metadata: serializedMetadata,
-    severity,
-    created_at: timestamp,
+    )`,
+    args: {
+      id,
+      user_id: input.user_id,
+      task_id: input.task_id ?? null,
+      event_type: input.event_type,
+      message: input.message,
+      metadata: serializedMetadata,
+      severity,
+      created_at: timestamp,
+    },
   });
 
-  return db
-    .prepare(`SELECT * FROM activity_events WHERE id = ?`)
-    .get(id) as ActivityEvent;
+  const result = await db.execute({
+    sql: `SELECT * FROM activity_events WHERE id = ?`,
+    args: [id],
+  });
+
+  return result.rows[0] as unknown as ActivityEvent;
 }
 
 export interface ListActivityOptions {
@@ -99,10 +112,10 @@ export interface ListActivityOptions {
   limit?: number;
 }
 
-export function listActivity(
+export async function listActivity(
   options: ListActivityOptions
-): ActivityEvent[] {
-  const db = getDb();
+): Promise<ActivityEvent[]> {
+  const db = await getDb();
 
   const clauses: string[] = ["user_id = @user_id"];
   const params: Record<string, unknown> = {
@@ -129,13 +142,14 @@ export function listActivity(
   const limit = options.limit ?? 200;
   params.limit = limit;
 
-  return db
-    .prepare(
-      `SELECT *
-       FROM activity_events
-       WHERE ${clauses.join(" AND ")}
-       ORDER BY created_at DESC
-       LIMIT @limit`
-    )
-    .all(params) as ActivityEvent[];
+  const result = await db.execute({
+    sql: `SELECT *
+     FROM activity_events
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY created_at DESC
+     LIMIT @limit`,
+    args: params as InArgs,
+  });
+
+  return result.rows as unknown as ActivityEvent[];
 }

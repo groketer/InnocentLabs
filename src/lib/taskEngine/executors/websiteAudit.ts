@@ -34,6 +34,8 @@
 
 import { randomUUID } from "crypto";
 
+import { getDb } from "@/lib/db";
+
 import type { AgentTask, Product } from "@/lib/types";
 
 import type {
@@ -1028,13 +1030,13 @@ function buildEvidenceText(
 /* Database enrichment                                                        */
 /* -------------------------------------------------------------------------- */
 
-function persistObservation(
+async function persistObservation(
   product: Product,
   observation: WebsiteObservation,
   unknowns: string[],
   confidence: number
-): void {
-  const db = require("@/lib/db").getDb();
+): Promise<void> {
+  const db = await getDb();
 
   const existingEvidence = product.evidence
     ? `${product.evidence}\n\n`
@@ -1044,30 +1046,33 @@ function persistObservation(
     observation
   )}`;
 
-  db.prepare(`
-    UPDATE products
-    SET
-      evidence = @evidence,
-      unknowns = @unknowns,
-      confidence = @confidence,
-      last_audited_at = @last_audited_at,
-      updated_at = @updated_at
-    WHERE id = @id
-  `).run({
-    id: product.id,
+  await db.execute({
+    sql: `
+      UPDATE products
+      SET
+        evidence = @evidence,
+        unknowns = @unknowns,
+        confidence = @confidence,
+        last_audited_at = @last_audited_at,
+        updated_at = @updated_at
+      WHERE id = @id
+    `,
+    args: {
+      id: product.id,
 
-    evidence,
+      evidence,
 
-    unknowns:
-      JSON.stringify(unknowns),
+      unknowns:
+        JSON.stringify(unknowns),
 
-    confidence,
+      confidence,
 
-    last_audited_at:
-      observation.observed_at,
+      last_audited_at:
+        observation.observed_at,
 
-    updated_at:
-      observation.observed_at,
+      updated_at:
+        observation.observed_at,
+    },
   });
 }
 
@@ -1084,15 +1089,15 @@ export const websiteAuditExecutor: TaskExecutor = {
    *
    * The task engine then executes exactly one product observation at a time.
    */
-  planSubtasks(
+  async planSubtasks(
     task: AgentTask
-  ): SubtaskPlanItem[] {
+  ): Promise<SubtaskPlanItem[]> {
     const requestedProduct =
-      extractRequestedProductName(task);
+      await extractRequestedProductName(task);
 
     if (requestedProduct) {
       const product =
-        getProductByName(
+        await getProductByName(
           requestedProduct
         );
 
@@ -1114,7 +1119,9 @@ export const websiteAuditExecutor: TaskExecutor = {
       ];
     }
 
-    return listProductsWithUrl().map(
+    const products = await listProductsWithUrl();
+
+    return products.map(
       (product) => ({
         title: `Audit ${product.name}`,
 
@@ -1154,7 +1161,7 @@ export const websiteAuditExecutor: TaskExecutor = {
     }
 
     const product =
-      getProductByName(
+      await getProductByName(
         extractProductName(
           subtask.title
         )
@@ -1434,7 +1441,7 @@ export const websiteAuditExecutor: TaskExecutor = {
           unknowns
         );
 
-      persistObservation(
+      await persistObservation(
         product,
         observation,
         unknowns,
@@ -1623,9 +1630,9 @@ export const websiteAuditExecutor: TaskExecutor = {
  * subtask title prevents a malformed task from accidentally updating the
  * wrong product.
  */
-function extractRequestedProductName(
+async function extractRequestedProductName(
   task: AgentTask
-): string | null {
+): Promise<string | null> {
   /**
    * The task title is the strongest signal of the requested target.
    *
@@ -1649,7 +1656,7 @@ function extractRequestedProductName(
   }
 
   const products =
-    listProductsWithUrl();
+    await listProductsWithUrl();
 
   /**
    * Match longer product names first.

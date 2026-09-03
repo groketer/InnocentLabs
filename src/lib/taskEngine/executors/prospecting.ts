@@ -434,10 +434,10 @@ function extractExplicitProductName(
  *
  * Never uses unrestricted substring matching.
  */
-function resolvePortfolioProduct(
+async function resolvePortfolioProduct(
   requestedName: string
-): ReturnType<
-  typeof getProductByName
+): Promise<
+  Awaited<ReturnType<typeof getProductByName>>
 > {
   const requested =
     requestedName.trim();
@@ -447,7 +447,7 @@ function resolvePortfolioProduct(
   }
 
   const products =
-    listProductsWithUrl();
+    await listProductsWithUrl();
 
   const exact =
     products.find(
@@ -496,9 +496,9 @@ function resolvePortfolioProduct(
  * 2. Exact/boundary-aware product-name mention.
  * 3. Otherwise null.
  */
-function extractProductName(
+async function extractProductName(
   task: AgentTask
-): string | null {
+): Promise<string | null> {
   const context =
     getTaskContext(task);
 
@@ -509,7 +509,7 @@ function extractProductName(
 
   if (explicit) {
     const resolved =
-      resolvePortfolioProduct(
+      await resolvePortfolioProduct(
         explicit
       );
 
@@ -519,7 +519,7 @@ function extractProductName(
   }
 
   const products =
-    listProductsWithUrl();
+    await listProductsWithUrl();
 
   const matches =
     products.filter(
@@ -565,9 +565,9 @@ function extractProductName(
  * This is only a hint. The live marketplace refresh must establish the
  * product before it becomes authoritative for the execution.
  */
-function extractRequestedProductHint(
+async function extractRequestedProductHint(
   task: AgentTask
-): string | null {
+): Promise<string | null> {
   const explicit =
     extractExplicitProductName(
       task
@@ -580,7 +580,7 @@ function extractRequestedProductHint(
   }
 
   const existing =
-    extractProductName(task);
+    await extractProductName(task);
 
   if (existing) {
     return existing;
@@ -638,13 +638,13 @@ function extractRequestedProductHint(
  * This supports the important Milestone 3D case where a product is found
  * on innocent.co.ke during the same execution that requested it.
  */
-function resolveProductHint(
+async function resolveProductHint(
   hint: string
-): ReturnType<
-  typeof getProductByName
+): Promise<
+  Awaited<ReturnType<typeof getProductByName>>
 > {
   const exact =
-    resolvePortfolioProduct(
+    await resolvePortfolioProduct(
       hint
     );
 
@@ -662,7 +662,7 @@ function resolveProductHint(
   }
 
   const products =
-    listProductsWithUrl();
+    await listProductsWithUrl();
 
   const matches =
     products.filter(
@@ -695,9 +695,9 @@ function resolveProductHint(
 }
 
 function buildProductContext(
-  product: ReturnType<
+  product: Awaited<ReturnType<
     typeof getProductByName
-  >
+  >>
 ): string {
   if (!product) {
     return "";
@@ -743,8 +743,10 @@ Do not fill them with assumptions.
  */
 async function refreshLivePortfolio():
   Promise<LivePortfolioRefreshResult> {
+  const existingProductsList =
+    await listProductsWithUrl();
   const existingProducts =
-    listProductsWithUrl().map(
+    existingProductsList.map(
       (product) =>
         `${product.name} | ${product.url}`
     );
@@ -2123,7 +2125,7 @@ export const prospectingExecutor:
      * newly listed products on innocent.co.ke.
      */
     const requestedProductHint =
-      extractRequestedProductHint(
+      await extractRequestedProductHint(
         task
       );
 
@@ -2135,7 +2137,7 @@ export const prospectingExecutor:
     /* ---------------------------------------------------------------------- */
 
     let productName =
-      extractProductName(task);
+      await extractProductName(task);
 
     /**
      * If the product wasn't previously in the local portfolio, try the
@@ -2146,7 +2148,7 @@ export const prospectingExecutor:
       requestedProductHint
     ) {
       const resolved =
-        resolveProductHint(
+        await resolveProductHint(
           requestedProductHint
         );
 
@@ -2200,7 +2202,7 @@ export const prospectingExecutor:
     }
 
     const product =
-      getProductByName(
+      await getProductByName(
         productName
       );
 
@@ -2487,7 +2489,7 @@ Do not return explanatory prose outside the JSON object.
       /* -------------------------------------------------------------------- */
 
       const existing =
-        listProspects(
+        await listProspects(
           task.user_id,
           {
             product_id:
@@ -2528,7 +2530,7 @@ Do not return explanatory prose outside the JSON object.
 
         try {
           const prospect =
-            createProspect({
+            await createProspect({
               user_id:
                 task.user_id,
 

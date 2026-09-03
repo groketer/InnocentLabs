@@ -214,7 +214,7 @@ Do not create tasks merely to appear proactive.
       taskDescription += contextLines.join("\n");
     }
 
-    const task = createTask({
+    const task = await createTask({
       user_id: userId,
       title: input.title,
       description: taskDescription,
@@ -224,7 +224,7 @@ Do not create tasks merely to appear proactive.
       conversation_id: conversationId,
     });
 
-    logActivity({
+    await logActivity({
       user_id: userId,
       task_id: task.id,
       event_type: "TASK_CREATED",

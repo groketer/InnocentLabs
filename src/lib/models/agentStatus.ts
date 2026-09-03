@@ -22,8 +22,8 @@ function isStale(task: AgentTask): boolean {
   return Date.now() - new Date(task.last_activity_at).getTime() > STALE_HEARTBEAT_MS;
 }
 
-export function computeAgentStatus(userId: string): AgentStatus {
-  const tasks = listTasks({ user_id: userId, topLevelOnly: true, limit: 50 });
+export async function computeAgentStatus(userId: string): Promise<AgentStatus> {
+  const tasks = await listTasks({ user_id: userId, topLevelOnly: true, limit: 50 });
 
   const running = tasks.find((t) => t.status === "RUNNING");
   if (running) {

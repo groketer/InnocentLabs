@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
       : undefined;
     const limitParam = searchParams.get("limit");
 
-    const tasks = listTasks({
+    const tasks = await listTasks({
       user_id: LOCAL_USER_ID,
       topLevelOnly,
       statuses,

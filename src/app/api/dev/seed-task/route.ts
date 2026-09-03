@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     // no body is fine, use defaults
   }
 
-  const task = createTask({
+  const task = await createTask({
     user_id: LOCAL_USER_ID,
     title: body.title ?? "Test: Innocent Labs Website Audit",
     description:
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     max_retries: body.max_retries ?? 3,
   });
 
-  logActivity({
+  await logActivity({
     user_id: LOCAL_USER_ID,
     task_id: task.id,
     event_type: "TASK_CREATED",

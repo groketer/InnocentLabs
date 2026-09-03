@@ -162,10 +162,10 @@ function buildQueryCandidates(query: string): string[] {
  * We do not search the research body because it may contain large amounts
  * of arbitrary text.
  */
-export function getLatestWebResearchResult(
+export async function getLatestWebResearchResult(
   query: string
-): PersistedResearchResult | null {
-  const db = getDb();
+): Promise<PersistedResearchResult | null> {
+  const db = await getDb();
   const trimmed = query.trim();
 
   if (!trimmed) {
@@ -177,8 +177,8 @@ export function getLatestWebResearchResult(
   for (const candidate of candidates) {
     const pattern = `%${candidate}%`;
 
-    const row = db
-      .prepare(`
+    const result = await db.execute({
+      sql: `
         SELECT
           t.id,
           t.task_type,
@@ -210,8 +210,11 @@ export function getLatestWebResearchResult(
         ORDER BY
           COALESCE(t.completed_at, t.updated_at, t.created_at) DESC
         LIMIT 1
-      `)
-      .get(pattern, pattern, pattern) as
+      `,
+      args: [pattern, pattern, pattern],
+    });
+
+    const row = result.rows[0] as unknown as
       | {
           id: string;
           task_type: string;

@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
       : undefined;
     const limitParam = searchParams.get("limit");
 
-    const activity = listActivity({
+    const activity = await listActivity({
       user_id: LOCAL_USER_ID,
       eventTypes,
       limit: limitParam ? Number(limitParam) : undefined,

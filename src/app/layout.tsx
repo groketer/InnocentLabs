@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import EngineTicker from "@/components/EngineTicker";
 
 export const metadata: Metadata = {
   title: "Innocent Intelligence",
@@ -14,7 +15,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <EngineTicker />
+        {children}
+      </body>
     </html>
   );
 }

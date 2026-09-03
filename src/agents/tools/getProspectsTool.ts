@@ -158,7 +158,7 @@ an empty database result.
     let productId: string | undefined;
 
     if (input.product_name) {
-      const product = getProductByName(input.product_name.trim());
+      const product = await getProductByName(input.product_name.trim());
 
       if (!product) {
         return {
@@ -182,7 +182,7 @@ an empty database result.
       productId = product.id;
     }
 
-    const prospects = listProspects(userId, {
+    const prospects = await listProspects(userId, {
       product_id: productId,
       qualification_status: input.qualification_status,
       prospect_type: input.prospect_type,

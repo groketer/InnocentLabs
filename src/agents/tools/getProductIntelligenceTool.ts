@@ -190,7 +190,7 @@ IMPORTANT:
     }
 
     const product =
-      getProductByName(requested);
+      await getProductByName(requested);
 
     if (!product) {
       return safeStringify({
@@ -212,7 +212,7 @@ IMPORTANT:
      */
     try {
       latestAudit =
-        getLatestWebsiteAuditResult(
+        await getLatestWebsiteAuditResult(
           product.name
         );
     } catch {

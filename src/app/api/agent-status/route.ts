@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    const status = computeAgentStatus(LOCAL_USER_ID);
+    const status = await computeAgentStatus(LOCAL_USER_ID);
     return NextResponse.json({ status });
   } catch (error) {
     console.error("[api/agent-status] GET failed:", error);

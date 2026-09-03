@@ -867,7 +867,7 @@ export const portfolioRefreshExecutor:
           );
 
         const before =
-          listProducts();
+          await listProducts();
 
         const existingNames =
           new Set(
@@ -912,7 +912,7 @@ export const portfolioRefreshExecutor:
               );
 
             const product =
-              upsertDiscoveredPortfolioProduct(
+              await upsertDiscoveredPortfolioProduct(
                 {
                   name:
                     candidate.name,
@@ -962,7 +962,7 @@ export const portfolioRefreshExecutor:
         }
 
         const after =
-          listProducts();
+          await listProducts();
 
         const summary =
           newlyDiscovered.length > 0

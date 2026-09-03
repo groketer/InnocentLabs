@@ -4,29 +4,33 @@
  * HOW AUTONOMOUS EXECUTION ACTUALLY WORKS HERE (read this before assuming
  * more than what's true):
  *
- * This app runs on localhost as one long-lived Node.js process (started by
- * `next dev` or `next start`). This module starts a `setInterval` loop
- * inside that same process the first time the server boots. Every tick,
- * it looks at QUEUED/RUNNING tasks in the SQLite database and advances
- * each one by exactly one real unit of work (e.g. one website fetch),
- * persisting the result before the next tick. Because the state lives in
- * SQLite and not in the browser, a task keeps progressing even if you
- * close the tab, navigate away, or refresh — as long as this Node process
- * keeps running.
+ * Historically (pre-Milestone 3E) this app ran on localhost as one
+ * long-lived Node.js process (started by `next dev` or `next start`),
+ * and this module started a `setInterval` loop inside that same process
+ * the first time the server booted. Every tick, it looked at
+ * QUEUED/RUNNING tasks in the database and advanced each one by exactly
+ * one real unit of work, persisting the result before the next tick.
  *
- * This is NOT the same as a durable background job system. If you stop the
- * `next dev`/`next start` process, execution stops — there is no separate
- * worker or queue service running independently. On restart, the engine
- * runs a recovery pass (see `recoverInterruptedTasks`) that finds tasks
- * left mid-flight and marks them for review rather than silently resuming
- * or silently discarding them.
+ * MILESTONE 3E — VERCEL:
  *
- * If this app is ever deployed to a serverless platform (e.g. Vercel),
- * this exact mechanism will NOT work, because serverless functions don't
- * keep a process alive between requests. At that point this loop would
- * need to be replaced with a scheduled trigger (e.g. Vercel Cron calling
- * a `/api/tasks/tick` route on an interval) driving the same `tick()`
- * function below — the task/activity data model does not need to change.
+ * Serverless functions don't keep a process alive between requests, so
+ * the always-on `setInterval` loop cannot run there. `tick()` itself is
+ * unchanged — it still advances every active top-level task by one real
+ * unit of work and persists the result. What changed is *what drives*
+ * `tick()`:
+ *
+ * - Locally (`next dev` / `next start`, i.e. NOT on Vercel), `startEngine()`
+ *   still runs the old always-on `setInterval` loop, so local behavior is
+ *   unchanged from before.
+ * - On Vercel (`process.env.VERCEL` is set), `startEngine()` does NOT start
+ *   an interval — instead, `tick()` is invoked externally:
+ *     - by the client, via a small poller that calls `POST /api/tasks/tick`
+ *       every few seconds while the app is open (see EngineTicker component);
+ *     - by a daily Vercel Cron job hitting `/api/cron/daily`, as a backstop
+ *       for when nobody has the app open.
+ *
+ * Either way, the underlying data model and `tick()` semantics are
+ * identical — only the trigger mechanism differs by environment.
  */
 
 import { startPortfolioScheduler } from "./portfolioScheduler";
@@ -77,18 +81,18 @@ function errorMessageFromUnknown(err: unknown): string {
  * that distinction explicitly and, for a subtask, fail only that subtask so
  * the parent can still account for the other work it may have completed.
  */
-function recordExecutorFailure(
+async function recordExecutorFailure(
   task: AgentTask,
   message: string,
   options?: {
     subtask?: AgentTask;
     retryable?: boolean;
   }
-): void {
+): Promise<void> {
   const subtask = options?.subtask;
 
   if (subtask) {
-    updateTask(subtask.id, {
+    await updateTask(subtask.id, {
       status: "FAILED",
       completed_at: nowIso(),
       error_message: `Executor error: ${message}`,
@@ -99,18 +103,18 @@ function recordExecutorFailure(
       heartbeat_at: null,
     });
 
-    logActivity({
+    await logActivity({
       user_id: task.user_id,
       task_id: subtask.id,
       event_type: "SUBTASK_FAILED",
       message: `${subtask.title}: executor error — ${message}`,
     });
 
-    recomputeParentProgress(task.id);
+    await recomputeParentProgress(task.id);
     return;
   }
 
-  updateTask(task.id, {
+  await updateTask(task.id, {
     status: "FAILED",
     completed_at: nowIso(),
     error_message: `Executor error: ${message}`,
@@ -120,7 +124,7 @@ function recordExecutorFailure(
     heartbeat_at: null,
   });
 
-  logActivity({
+  await logActivity({
     user_id: task.user_id,
     task_id: task.id,
     event_type: "TASK_FAILED",
@@ -132,12 +136,12 @@ async function startTask(task: AgentTask): Promise<void> {
   const executor = getExecutor(task.task_type);
 
   if (!executor) {
-    updateTask(task.id, {
+    await updateTask(task.id, {
       status: "FAILED",
       error_message: `No executor registered for task_type "${task.task_type}".`,
       completed_at: nowIso(),
     });
-    logActivity({
+    await logActivity({
       user_id: task.user_id,
       task_id: task.id,
       event_type: "TASK_FAILED",
@@ -146,10 +150,10 @@ async function startTask(task: AgentTask): Promise<void> {
     return;
   }
 
-  const claimed = claimTask(task.id, WORKER_ID, randomUUID());
+  const claimed = await claimTask(task.id, WORKER_ID, randomUUID());
   if (!claimed) return;
   task = claimed;
-  logActivity({
+  await logActivity({
     user_id: task.user_id,
     task_id: task.id,
     event_type: "TASK_STARTED",
@@ -161,15 +165,15 @@ async function startTask(task: AgentTask): Promise<void> {
 
     try {
       plan = await executor.planSubtasks(task);
-      touchHeartbeat(task.id);
+      await touchHeartbeat(task.id);
     } catch (err) {
       const message = errorMessageFromUnknown(err);
-      recordExecutorFailure(task, message);
+      await recordExecutorFailure(task, message);
       return;
     }
 
     if (plan.length === 0) {
-      updateTask(task.id, {
+      await updateTask(task.id, {
         status: "COMPLETED",
         completed_at: nowIso(),
         progress_current: 0,
@@ -180,7 +184,7 @@ async function startTask(task: AgentTask): Promise<void> {
         execution_id: null,
         heartbeat_at: null,
       });
-      logActivity({
+      await logActivity({
         user_id: task.user_id,
         task_id: task.id,
         event_type: "TASK_COMPLETED",
@@ -190,7 +194,7 @@ async function startTask(task: AgentTask): Promise<void> {
     }
 
     for (const item of plan) {
-      createTask({
+      await createTask({
         user_id: task.user_id,
         parent_task_id: task.id,
         title: item.title,
@@ -202,23 +206,23 @@ async function startTask(task: AgentTask): Promise<void> {
       });
     }
 
-    recomputeParentProgress(task.id);
+    await recomputeParentProgress(task.id);
     return;
   }
 
   if (executor.runTask) {
     try {
       const result = await executor.runTask(task);
-      touchHeartbeat(task.id);
-      finishSimpleTask(task, result);
+      await touchHeartbeat(task.id);
+      await finishSimpleTask(task, result);
     } catch (err) {
       const message = errorMessageFromUnknown(err);
-      recordExecutorFailure(task, message);
+      await recordExecutorFailure(task, message);
     }
   }
 }
 
-function finishSimpleTask(
+async function finishSimpleTask(
   task: AgentTask,
   result: {
     success: boolean;
@@ -227,15 +231,15 @@ function finishSimpleTask(
     needsInputMessage?: string;
     resultData?: Record<string, unknown>;
   }
-): void {
+): Promise<void> {
   if (result.needsInput) {
-    updateTask(task.id, {
+    await updateTask(task.id, {
       status: "NEEDS_INPUT",
       requires_user_input: 1,
       error_message: result.needsInputMessage ?? null,
       last_activity_at: nowIso(),
     });
-    logActivity({
+    await logActivity({
       user_id: task.user_id,
       task_id: task.id,
       event_type: "TASK_NEEDS_INPUT",
@@ -244,7 +248,7 @@ function finishSimpleTask(
     return;
   }
 
-  updateTask(task.id, {
+  await updateTask(task.id, {
     status: result.success ? "COMPLETED" : "FAILED",
     completed_at: nowIso(),
     result_summary: result.summary,
@@ -255,7 +259,7 @@ function finishSimpleTask(
     heartbeat_at: null,
     last_activity_at: nowIso(),
   });
-  logActivity({
+  await logActivity({
     user_id: task.user_id,
     task_id: task.id,
     event_type: result.success ? "TASK_COMPLETED" : "TASK_FAILED",
@@ -267,7 +271,7 @@ async function advanceRunningTask(task: AgentTask): Promise<void> {
   const executor = getExecutor(task.task_type);
   if (!executor) return; // already handled at start
 
-  const subtasks = listSubtasks(task.id);
+  const subtasks = await listSubtasks(task.id);
 
   if (subtasks.length === 0 && executor.runTask) {
     // simple task, already ran at start; nothing further to do here
@@ -299,7 +303,7 @@ async function advanceRunningTask(task: AgentTask): Promise<void> {
         ? `Completed. ${succeeded} of ${subtasks.length} items succeeded.`
         : `Completed with issues. ${succeeded} of ${subtasks.length} succeeded, ${failed} failed.`;
 
-    updateTask(task.id, {
+    await updateTask(task.id, {
       status: failed === 0 ? "COMPLETED" : "COMPLETED_WITH_ISSUES",
       completed_at: nowIso(),
       result_summary: summary,
@@ -310,7 +314,7 @@ async function advanceRunningTask(task: AgentTask): Promise<void> {
       heartbeat_at: null,
       last_activity_at: nowIso(),
     });
-    logActivity({
+    await logActivity({
       user_id: task.user_id,
       task_id: task.id,
       event_type: failed === 0 ? "TASK_COMPLETED" : "TASK_COMPLETED_WITH_ISSUES",
@@ -325,19 +329,19 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
 
   const isRetry = subtask.status === "RETRYING";
 
-  const claimed = claimSubtask(subtask.id, WORKER_ID, randomUUID());
+  const claimed = await claimSubtask(subtask.id, WORKER_ID, randomUUID());
   if (!claimed) return;
   subtask = claimed;
-  updateTask(subtask.id, {
+  await updateTask(subtask.id, {
     current_step: isRetry ? `Retrying (attempt ${subtask.retry_count + 1})` : "In progress",
   });
-  updateTask(parent.id, {
+  await updateTask(parent.id, {
     current_subtask: subtask.title,
     current_step: isRetry ? "Retrying a previous failure" : "Auditing",
     last_activity_at: nowIso(),
   });
 
-  logActivity({
+  await logActivity({
     user_id: parent.user_id,
     task_id: subtask.id,
     event_type: "SUBTASK_STARTED",
@@ -347,17 +351,17 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
   let result;
   try {
     result = await executor.runSubtask(parent, subtask);
-    touchHeartbeat(parent.id);
-    touchHeartbeat(subtask.id);
+    await touchHeartbeat(parent.id);
+    await touchHeartbeat(subtask.id);
   } catch (err) {
-    touchHeartbeat(parent.id);
+    await touchHeartbeat(parent.id);
     const message = errorMessageFromUnknown(err);
-    recordExecutorFailure(parent, message, { subtask });
+    await recordExecutorFailure(parent, message, { subtask });
     return;
   }
 
   if (result.success) {
-    updateTask(subtask.id, {
+    await updateTask(subtask.id, {
       status: "COMPLETED",
       completed_at: nowIso(),
       result_summary: result.summary,
@@ -367,18 +371,18 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
       execution_id: null,
       heartbeat_at: null,
     });
-    logActivity({
+    await logActivity({
       user_id: parent.user_id,
       task_id: subtask.id,
       event_type: "SUBTASK_COMPLETED",
       message: `${subtask.title}: ${result.summary}`,
     });
-    recomputeParentProgress(parent.id);
+    await recomputeParentProgress(parent.id);
     return;
   }
 
   if (result.needsInput) {
-    updateTask(subtask.id, {
+    await updateTask(subtask.id, {
       status: "NEEDS_INPUT",
       requires_user_input: 1,
       error_message: result.needsInputMessage ?? result.errorMessage ?? null,
@@ -387,7 +391,7 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
       execution_id: null,
       heartbeat_at: null,
     });
-    updateTask(parent.id, {
+    await updateTask(parent.id, {
       status: "NEEDS_INPUT",
       requires_user_input: 1,
       last_activity_at: nowIso(),
@@ -395,7 +399,7 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
       execution_id: null,
       heartbeat_at: null,
     });
-    logActivity({
+    await logActivity({
       user_id: parent.user_id,
       task_id: subtask.id,
       event_type: "TASK_NEEDS_INPUT",
@@ -408,7 +412,7 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
 
   if (result.transientFailure && nextRetryCount <= subtask.max_retries) {
     const delay = backoffDelayMs(nextRetryCount);
-    updateTask(subtask.id, {
+    await updateTask(subtask.id, {
       status: "RETRYING",
       retry_count: nextRetryCount,
       next_retry_at: new Date(Date.now() + delay).toISOString(),
@@ -418,7 +422,7 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
       execution_id: null,
       heartbeat_at: null,
     });
-    logActivity({
+    await logActivity({
       user_id: parent.user_id,
       task_id: subtask.id,
       event_type: "TASK_RETRYING",
@@ -427,7 +431,7 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
     return;
   }
 
-  updateTask(subtask.id, {
+  await updateTask(subtask.id, {
     status: "FAILED",
     completed_at: nowIso(),
     retry_count: nextRetryCount,
@@ -437,7 +441,7 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
     execution_id: null,
     heartbeat_at: null,
   });
-  logActivity({
+  await logActivity({
     user_id: parent.user_id,
     task_id: subtask.id,
     event_type: "SUBTASK_FAILED",
@@ -445,12 +449,18 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
       result.transientFailure ? " (gave up after max retries)" : ""
     }`,
   });
-  recomputeParentProgress(parent.id);
+  await recomputeParentProgress(parent.id);
 }
 
-/** One tick: advance every active top-level task by exactly one real step each. */
+/**
+ * One tick: advance every active top-level task by exactly one real step
+ * each. Safe to call concurrently/repeatedly — claimTask/claimSubtask make
+ * task claiming atomic, so overlapping callers (e.g. a client poller and a
+ * cron job both hitting /api/tasks/tick around the same time) cannot both
+ * advance the same task twice.
+ */
 export async function tick(): Promise<void> {
-  const tasks = listActiveTopLevelTasks();
+  const tasks = await listActiveTopLevelTasks();
 
   for (const task of tasks) {
     try {
@@ -462,7 +472,7 @@ export async function tick(): Promise<void> {
     } catch (err) {
       const message = errorMessageFromUnknown(err);
       console.error(`[taskEngine] Tick error on task ${task.id}:`, err);
-      updateTask(task.id, {
+      await updateTask(task.id, {
         status: "FAILED",
         completed_at: nowIso(),
         error_message: `Unexpected engine error: ${message}`,
@@ -471,7 +481,7 @@ export async function tick(): Promise<void> {
         heartbeat_at: null,
         last_activity_at: nowIso(),
       });
-      logActivity({
+      await logActivity({
         user_id: task.user_id,
         task_id: task.id,
         event_type: "TASK_FAILED",
@@ -482,29 +492,32 @@ export async function tick(): Promise<void> {
 }
 
 /**
- * Runs once at process start. Any task/subtask still marked RUNNING at
- * this point could not have been ticked by *this* process — it must be
- * left over from a previous process that stopped (crash, manual stop,
- * dev-server restart). We don't silently resume or silently discard it:
- * subtasks are reset to QUEUED (safe — they'll simply be retried), and
- * the parent task is moved to NEEDS_INPUT so a person decides whether to
- * resume.
+ * Runs once at process start (locally) or once per cold start (on Vercel).
+ * Any task/subtask still marked RUNNING at this point could not have been
+ * ticked by *this* process/invocation — it must be left over from a
+ * previous process that stopped (crash, manual stop, dev-server restart,
+ * or — on Vercel — a serverless instance that was recycled mid-step). We
+ * don't silently resume or silently discard it: subtasks are reset to
+ * QUEUED (safe — they'll simply be retried), and the parent task is moved
+ * to NEEDS_INPUT so a person decides whether to resume.
  */
-export function recoverInterruptedTasks(): void {
-  const db = getDb();
-  const staleSubtasks = db
-    .prepare(`SELECT * FROM agent_tasks WHERE status = 'RUNNING' AND parent_task_id IS NOT NULL`)
-    .all() as AgentTask[];
+export async function recoverInterruptedTasks(): Promise<void> {
+  const db = await getDb();
+
+  const staleSubtasksResult = await db.execute(
+    `SELECT * FROM agent_tasks WHERE status = 'RUNNING' AND parent_task_id IS NOT NULL`
+  );
+  const staleSubtasks = staleSubtasksResult.rows as unknown as AgentTask[];
 
   for (const s of staleSubtasks) {
-    updateTask(s.id, {
+    await updateTask(s.id, {
       status: "QUEUED",
       current_step: null,
       worker_id: null,
       execution_id: null,
       heartbeat_at: null,
     });
-    logActivity({
+    await logActivity({
       user_id: s.user_id,
       task_id: s.id,
       event_type: "TASK_RECOVERY",
@@ -512,12 +525,13 @@ export function recoverInterruptedTasks(): void {
     });
   }
 
-  const staleParents = db
-    .prepare(`SELECT * FROM agent_tasks WHERE status = 'RUNNING' AND parent_task_id IS NULL`)
-    .all() as AgentTask[];
+  const staleParentsResult = await db.execute(
+    `SELECT * FROM agent_tasks WHERE status = 'RUNNING' AND parent_task_id IS NULL`
+  );
+  const staleParents = staleParentsResult.rows as unknown as AgentTask[];
 
   for (const t of staleParents) {
-    updateTask(t.id, {
+    await updateTask(t.id, {
       status: "NEEDS_INPUT",
       requires_user_input: 1,
       last_activity_at: nowIso(),
@@ -525,7 +539,7 @@ export function recoverInterruptedTasks(): void {
       execution_id: null,
       heartbeat_at: null,
     });
-    logActivity({
+    await logActivity({
       user_id: t.user_id,
       task_id: t.id,
       event_type: "TASK_RECOVERY",
@@ -534,12 +548,32 @@ export function recoverInterruptedTasks(): void {
   }
 }
 
+/**
+ * Starts the engine.
+ *
+ * On Vercel, there is no long-lived process to keep an interval alive in,
+ * so this deliberately does NOT start the setInterval loop there — see
+ * the module doc comment above. `tick()` is still exported and still
+ * fully functional; it is simply driven externally on Vercel (client
+ * poller + daily cron) instead of by this loop.
+ */
 export function startEngine(): void {
   if (global.__innocentIntelligenceEngineStarted) return;
   global.__innocentIntelligenceEngineStarted = true;
+
   startPortfolioScheduler();
 
-  recoverInterruptedTasks();
+  recoverInterruptedTasks().catch((err) =>
+    console.error("[taskEngine] recoverInterruptedTasks() threw:", err)
+  );
+
+  if (process.env.VERCEL) {
+    console.log(
+      "[taskEngine] Running on Vercel — skipping the in-process tick loop. " +
+        "tick() is driven by client polling and the daily cron job instead."
+    );
+    return;
+  }
 
   setInterval(() => {
     tick().catch((err) => console.error("[taskEngine] tick() threw:", err));

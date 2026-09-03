@@ -15,10 +15,16 @@
  *   performance, customer demand, or buying intent.
  * - The intelligence layer must distinguish portfolio facts, direct website
  *   observations, interpretations, and unknowns.
+ *
+ * MILESTONE 3E — VERCEL:
+ * Every function here is now async because the underlying Postgres
+ * connection (Postgres via @neondatabase/serverless) is async. See src/lib/db.ts.
+ * See src/lib/db.ts for why.
  */
 
 import { randomUUID } from "crypto";
-import { getDb } from "@/lib/db";
+import { getDb, NOW_ISO_SQL } from "@/lib/db";
+import type { InArgs } from "@/lib/db";
 import type { Product } from "@/lib/types";
 
 /**
@@ -227,17 +233,22 @@ const HISTORICAL_ASSETS = [
 /**
  * Adds a column to an existing development database when it does not exist.
  */
-function ensureColumn(
-  db: ReturnType<typeof getDb>,
+async function ensureColumn(
   column: string,
   definition: string
-) {
-  const columns = db
-    .prepare(`PRAGMA table_info(products)`)
-    .all() as Array<{ name: string }>;
+): Promise<void> {
+  const db = await getDb();
+
+  const columns = (
+    await db.execute(`
+      SELECT column_name AS name
+      FROM information_schema.columns
+      WHERE table_name = 'products'
+    `)
+  ).rows as unknown as Array<{ name: string }>;
 
   if (!columns.some((c) => c.name === column)) {
-    db.exec(
+    await db.execute(
       `ALTER TABLE products ADD COLUMN ${column} ${definition}`
     );
   }
@@ -251,40 +262,40 @@ function ensureColumn(
  * This function does not delete unknown products and does not overwrite
  * intelligence fields gathered by website audits.
  */
-export function syncAuthoritativePortfolio(): void {
-  const db = getDb();
+export async function syncAuthoritativePortfolio(): Promise<void> {
+  const db = await getDb();
 
-  ensureColumn(db, "asset_type", "TEXT NOT NULL DEFAULT 'product'");
-  ensureColumn(db, "category", "TEXT NOT NULL DEFAULT 'unknown'");
-  ensureColumn(db, "description", "TEXT");
-  ensureColumn(db, "future_url", "TEXT");
-  ensureColumn(db, "notes", "TEXT");
+  await ensureColumn("asset_type", "TEXT NOT NULL DEFAULT 'product'");
+  await ensureColumn("category", "TEXT NOT NULL DEFAULT 'unknown'");
+  await ensureColumn("description", "TEXT");
+  await ensureColumn("future_url", "TEXT");
+  await ensureColumn("notes", "TEXT");
 
-  ensureColumn(db, "problem", "TEXT");
-  ensureColumn(db, "audience", "TEXT");
-  ensureColumn(db, "positioning", "TEXT");
-  ensureColumn(db, "features", "TEXT");
-  ensureColumn(db, "commercial_model", "TEXT");
-  ensureColumn(db, "pricing", "TEXT");
-  ensureColumn(db, "cta", "TEXT");
-  ensureColumn(db, "evidence", "TEXT");
-  ensureColumn(db, "unknowns", "TEXT");
-  ensureColumn(db, "confidence", "REAL");
-  ensureColumn(db, "last_audited_at", "TEXT");
+  await ensureColumn("problem", "TEXT");
+  await ensureColumn("audience", "TEXT");
+  await ensureColumn("positioning", "TEXT");
+  await ensureColumn("features", "TEXT");
+  await ensureColumn("commercial_model", "TEXT");
+  await ensureColumn("pricing", "TEXT");
+  await ensureColumn("cta", "TEXT");
+  await ensureColumn("evidence", "TEXT");
+  await ensureColumn("unknowns", "TEXT");
+  await ensureColumn("confidence", "REAL");
+  await ensureColumn("last_audited_at", "TEXT");
 
-  db.exec(`
+  await db.execute(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_unique
     ON products(name)
   `);
 
-  db.exec(`
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS app_meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     )
   `);
 
-  const upsert = db.prepare(`
+  const upsertSql = `
     INSERT INTO products (
       id,
       name,
@@ -315,32 +326,45 @@ export function syncAuthoritativePortfolio(): void {
       description = excluded.description,
       future_url = excluded.future_url,
       notes = excluded.notes,
-      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-  `);
+      updated_at = ${NOW_ISO_SQL}
+  `;
 
-  const markHistorical = db.prepare(`
+  const markHistoricalSql = `
     UPDATE products
     SET
       status = 'discontinued',
-      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-    WHERE name = ?
-  `);
+      updated_at = ${NOW_ISO_SQL}
+    WHERE name = @name
+  `;
 
-  const tx = db.transaction(() => {
-    for (const product of AUTHORITATIVE_PORTFOLIO) {
-      upsert.run({
+  /*
+   * All product upserts + historical-status updates run as a single
+   * batch so a partial portfolio sync can never be observed.
+   */
+  const statements: Array<{ sql: string; args: InArgs }> = [];
+
+  for (const product of AUTHORITATIVE_PORTFOLIO) {
+    statements.push({
+      sql: upsertSql,
+      args: {
         id: randomUUID(),
         future_url: null,
         notes: null,
         ...product,
-      });
-    }
+      },
+    });
+  }
 
-    for (const name of HISTORICAL_ASSETS) {
-      markHistorical.run(name);
-    }
+  for (const name of HISTORICAL_ASSETS) {
+    statements.push({
+      sql: markHistoricalSql,
+      args: { name },
+    });
+  }
 
-    upsert.run({
+  statements.push({
+    sql: upsertSql,
+    args: {
       id: randomUUID(),
       name: "Innocent Marketplace",
       url: "https://innocent.co.ke",
@@ -352,33 +376,39 @@ export function syncAuthoritativePortfolio(): void {
       future_url: null,
       notes:
         "Infrastructure/hub record; excluded from autonomous product audit tasks.",
-    });
+    },
   });
 
-  tx();
+  await db.batch(statements, "write");
 }
 
 /**
  * Initializes/reconciles the manually supplied bootstrap portfolio.
  */
-export function seedProductsIfEmpty(): void {
-  syncAuthoritativePortfolio();
+export async function seedProductsIfEmpty(): Promise<void> {
+  await syncAuthoritativePortfolio();
 }
 
 /**
  * Returns every portfolio record, including hubs and historical assets.
  */
-export function listProducts(): Product[] {
-  return getDb()
-    .prepare(`SELECT * FROM products ORDER BY name ASC`)
-    .all() as Product[];
+export async function listProducts(): Promise<Product[]> {
+  const db = await getDb();
+
+  const result = await db.execute(
+    `SELECT * FROM products ORDER BY name ASC`
+  );
+
+  return result.rows as unknown as Product[];
 }
 
 /**
  * Returns only current product records with usable URLs.
  */
-export function listProductsWithUrl(): Product[] {
-  return listProducts().filter(
+export async function listProductsWithUrl(): Promise<Product[]> {
+  const products = await listProducts();
+
+  return products.filter(
     (p) =>
       p.asset_type === "product" &&
       p.status !== "discontinued" &&
@@ -389,12 +419,17 @@ export function listProductsWithUrl(): Product[] {
 /**
  * Returns a single product by exact name.
  */
-export function getProductByName(
+export async function getProductByName(
   name: string
-): Product | null {
-  const product = getDb()
-    .prepare(`SELECT * FROM products WHERE name = ?`)
-    .get(name) as Product | undefined;
+): Promise<Product | null> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `SELECT * FROM products WHERE name = ?`,
+    args: [name],
+  });
+
+  const product = result.rows[0] as unknown as Product | undefined;
 
   return product ?? null;
 }
@@ -402,15 +437,17 @@ export function getProductByName(
 /**
  * Returns products explicitly eligible for autonomous work.
  */
-export function listAutonomousProducts(): Product[] {
+export async function listAutonomousProducts(): Promise<Product[]> {
   return listProductsWithUrl();
 }
 
 /**
  * Returns products that have not yet received a website audit.
  */
-export function listUnauditedProducts(): Product[] {
-  return listAutonomousProducts().filter(
+export async function listUnauditedProducts(): Promise<Product[]> {
+  const products = await listAutonomousProducts();
+
+  return products.filter(
     (product) => !product.last_audited_at
   );
 }
@@ -418,38 +455,38 @@ export function listUnauditedProducts(): Product[] {
 /**
  * Returns the most recent successful website-audit task result for a product.
  */
-export function getLatestWebsiteAuditResult(
+export async function getLatestWebsiteAuditResult(
   productName: string
-): {
+): Promise<{
   task_id: string;
   task_status: string;
   completed_at: string | null;
   result_summary: string | null;
   result_data: Record<string, unknown> | null;
-} | null {
-  const db = getDb();
+} | null> {
+  const db = await getDb();
 
-  const rows = db
-    .prepare(`
-      SELECT
-        id,
-        status,
-        completed_at,
-        result_summary,
-        result_json
-      FROM agent_tasks
-      WHERE task_type = 'website_audit'
-        AND status IN ('COMPLETED', 'COMPLETED_WITH_ISSUES')
-        AND result_json IS NOT NULL
-      ORDER BY completed_at DESC, updated_at DESC
-    `)
-    .all() as Array<{
-      id: string;
-      status: string;
-      completed_at: string | null;
-      result_summary: string | null;
-      result_json: string;
-    }>;
+  const result = await db.execute(`
+    SELECT
+      id,
+      status,
+      completed_at,
+      result_summary,
+      result_json
+    FROM agent_tasks
+    WHERE task_type = 'website_audit'
+      AND status IN ('COMPLETED', 'COMPLETED_WITH_ISSUES')
+      AND result_json IS NOT NULL
+    ORDER BY completed_at DESC, updated_at DESC
+  `);
+
+  const rows = result.rows as unknown as Array<{
+    id: string;
+    status: string;
+    completed_at: string | null;
+    result_summary: string | null;
+    result_json: string;
+  }>;
 
   for (const row of rows) {
     try {
@@ -528,14 +565,14 @@ export function isValidPortfolioUrl(
  * This allows the live portfolio refresh to remain separate from deeper
  * product intelligence.
  */
-export function upsertDiscoveredPortfolioProduct(input: {
+export async function upsertDiscoveredPortfolioProduct(input: {
   name: string;
   url: string;
   category?: string;
   description?: string;
   status?: Product["status"];
   notes?: string | null;
-}): Product {
+}): Promise<Product> {
   const name = normalizePortfolioProductName(input.name);
   const url = input.url.trim();
 
@@ -551,70 +588,76 @@ export function upsertDiscoveredPortfolioProduct(input: {
     );
   }
 
-  const db = getDb();
+  const db = await getDb();
 
-  const existing = getProductByName(name);
+  const existing = await getProductByName(name);
 
   if (existing) {
-    db.prepare(`
-      UPDATE products
-      SET
-        url = @url,
-        category = COALESCE(@category, category),
-        description = COALESCE(@description, description),
-        status = COALESCE(@status, status),
-        notes = COALESCE(@notes, notes),
-        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-      WHERE id = @id
-    `).run({
-      id: existing.id,
-      url,
-      category:
-        input.category?.trim() || null,
-      description:
-        input.description?.trim() || null,
-      status:
-        input.status ?? null,
-      notes:
-        input.notes?.trim() || null,
+    await db.execute({
+      sql: `
+        UPDATE products
+        SET
+          url = @url,
+          category = COALESCE(@category, category),
+          description = COALESCE(@description, description),
+          status = COALESCE(@status, status),
+          notes = COALESCE(@notes, notes),
+          updated_at = ${NOW_ISO_SQL}
+        WHERE id = @id
+      `,
+      args: {
+        id: existing.id,
+        url,
+        category:
+          input.category?.trim() || null,
+        description:
+          input.description?.trim() || null,
+        status:
+          input.status ?? null,
+        notes:
+          input.notes?.trim() || null,
+      },
     });
   } else {
-    db.prepare(`
-      INSERT INTO products (
-        id,
+    await db.execute({
+      sql: `
+        INSERT INTO products (
+          id,
+          name,
+          url,
+          status,
+          asset_type,
+          category,
+          description,
+          notes
+        )
+        VALUES (
+          @id,
+          @name,
+          @url,
+          @status,
+          'product',
+          @category,
+          @description,
+          @notes
+        )
+      `,
+      args: {
+        id: randomUUID(),
         name,
         url,
-        status,
-        asset_type,
-        category,
-        description,
-        notes
-      )
-      VALUES (
-        @id,
-        @name,
-        @url,
-        @status,
-        'product',
-        @category,
-        @description,
-        @notes
-      )
-    `).run({
-      id: randomUUID(),
-      name,
-      url,
-      status: input.status ?? "active",
-      category:
-        input.category?.trim() || "unknown",
-      description:
-        input.description?.trim() || null,
-      notes:
-        input.notes?.trim() || null,
+        status: input.status ?? "active",
+        category:
+          input.category?.trim() || "unknown",
+        description:
+          input.description?.trim() || null,
+        notes:
+          input.notes?.trim() || null,
+      },
     });
   }
 
-  const product = getProductByName(name);
+  const product = await getProductByName(name);
 
   if (!product) {
     throw new Error(

@@ -1,5 +1,13 @@
+/**
+ * MILESTONE 3E — VERCEL:
+ * Every function here is now async because the underlying Postgres
+ * connection (Postgres via @neondatabase/serverless) is async. See src/lib/db.ts.
+ * See src/lib/db.ts for why.
+ */
+
 import { randomUUID } from "crypto";
 import { getDb } from "@/lib/db";
+import type { InArgs } from "@/lib/db";
 import type {
   AgentTask,
   AgentTaskWithChildren,
@@ -91,13 +99,13 @@ const UPDATABLE_TASK_FIELDS = new Set<keyof AgentTask>([
   "created_by",
 ]);
 
-export function createTask(input: CreateTaskInput): AgentTask {
-  const db = getDb();
+export async function createTask(input: CreateTaskInput): Promise<AgentTask> {
+  const db = await getDb();
   const id = randomUUID();
   const timestamp = nowIso();
 
-  db.prepare(
-    `INSERT INTO agent_tasks (
+  await db.execute({
+    sql: `INSERT INTO agent_tasks (
       id, user_id, parent_task_id, title, description, task_type, status,
       priority, created_at, updated_at, last_activity_at, progress_current,
       progress_total, progress_label, conversation_id, created_by, max_retries
@@ -105,51 +113,60 @@ export function createTask(input: CreateTaskInput): AgentTask {
       @id, @user_id, @parent_task_id, @title, @description, @task_type, @status,
       @priority, @created_at, @updated_at, @last_activity_at, 0,
       @progress_total, @progress_label, @conversation_id, @created_by, @max_retries
-    )`
-  ).run({
-    id,
-    user_id: input.user_id,
-    parent_task_id: input.parent_task_id ?? null,
-    title: input.title,
-    description: input.description ?? null,
-    task_type: input.task_type,
-    status: input.status ?? "QUEUED",
-    priority: input.priority ?? "normal",
-    created_at: timestamp,
-    updated_at: timestamp,
-    last_activity_at: timestamp,
-    progress_total: input.progress_total ?? null,
-    progress_label: input.progress_label ?? null,
-    conversation_id: input.conversation_id ?? null,
-    created_by: input.created_by ?? "agent",
-    max_retries: input.max_retries ?? 3,
+    )`,
+    args: {
+      id,
+      user_id: input.user_id,
+      parent_task_id: input.parent_task_id ?? null,
+      title: input.title,
+      description: input.description ?? null,
+      task_type: input.task_type,
+      status: input.status ?? "QUEUED",
+      priority: input.priority ?? "normal",
+      created_at: timestamp,
+      updated_at: timestamp,
+      last_activity_at: timestamp,
+      progress_total: input.progress_total ?? null,
+      progress_label: input.progress_label ?? null,
+      conversation_id: input.conversation_id ?? null,
+      created_by: input.created_by ?? "agent",
+      max_retries: input.max_retries ?? 3,
+    },
   });
 
-  return getTaskById(id)!;
+  return (await getTaskById(id))!;
 }
 
-export function getTaskById(id: string): AgentTask | null {
-  const db = getDb();
-  const row = db
-    .prepare(`SELECT * FROM agent_tasks WHERE id = ?`)
-    .get(id) as AgentTask | undefined;
+export async function getTaskById(id: string): Promise<AgentTask | null> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `SELECT * FROM agent_tasks WHERE id = ?`,
+    args: [id],
+  });
+
+  const row = result.rows[0] as unknown as AgentTask | undefined;
   return row ?? null;
 }
 
-export function getTaskWithSubtasks(id: string): AgentTaskWithChildren | null {
-  const task = getTaskById(id);
+export async function getTaskWithSubtasks(
+  id: string
+): Promise<AgentTaskWithChildren | null> {
+  const task = await getTaskById(id);
   if (!task) return null;
-  const subtasks = listSubtasks(id);
+  const subtasks = await listSubtasks(id);
   return { ...task, subtasks };
 }
 
-export function listSubtasks(parentTaskId: string): AgentTask[] {
-  const db = getDb();
-  return db
-    .prepare(
-      `SELECT * FROM agent_tasks WHERE parent_task_id = ? ORDER BY created_at ASC`
-    )
-    .all(parentTaskId) as AgentTask[];
+export async function listSubtasks(parentTaskId: string): Promise<AgentTask[]> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `SELECT * FROM agent_tasks WHERE parent_task_id = ? ORDER BY created_at ASC`,
+    args: [parentTaskId],
+  });
+
+  return result.rows as unknown as AgentTask[];
 }
 
 export interface ListTasksOptions {
@@ -159,8 +176,8 @@ export interface ListTasksOptions {
   limit?: number;
 }
 
-export function listTasks(options: ListTasksOptions): AgentTask[] {
-  const db = getDb();
+export async function listTasks(options: ListTasksOptions): Promise<AgentTask[]> {
+  const db = await getDb();
   const clauses: string[] = ["user_id = @user_id"];
   const params: Record<string, unknown> = { user_id: options.user_id };
 
@@ -181,26 +198,28 @@ export function listTasks(options: ListTasksOptions): AgentTask[] {
   const limitClause = options.limit ? `LIMIT @limit` : "";
   if (options.limit) params.limit = options.limit;
 
-  return db
-    .prepare(
-      `SELECT * FROM agent_tasks WHERE ${clauses.join(
-        " AND "
-      )} ORDER BY created_at DESC ${limitClause}`
-    )
-    .all(params) as AgentTask[];
+  const result = await db.execute({
+    sql: `SELECT * FROM agent_tasks WHERE ${clauses.join(
+      " AND "
+    )} ORDER BY created_at DESC ${limitClause}`,
+    args: params as InArgs,
+  });
+
+  return result.rows as unknown as AgentTask[];
 }
 
 /** Tasks that are actively QUEUED or RUNNING — used by the engine each tick. */
-export function listActiveTopLevelTasks(): AgentTask[] {
-  const db = getDb();
-  return db
-    .prepare(
-      `SELECT * FROM agent_tasks
-       WHERE parent_task_id IS NULL
-       AND status IN ('QUEUED', 'RUNNING')
-       ORDER BY created_at ASC`
-    )
-    .all() as AgentTask[];
+export async function listActiveTopLevelTasks(): Promise<AgentTask[]> {
+  const db = await getDb();
+
+  const result = await db.execute(
+    `SELECT * FROM agent_tasks
+     WHERE parent_task_id IS NULL
+     AND status IN ('QUEUED', 'RUNNING')
+     ORDER BY created_at ASC`
+  );
+
+  return result.rows as unknown as AgentTask[];
 }
 
 /**
@@ -211,12 +230,12 @@ export function listActiveTopLevelTasks(): AgentTask[] {
  * being interpolated into the SQL statement. Values continue to use
  * parameterized SQL bindings.
  */
-export function updateTask(
+export async function updateTask(
   id: string,
   fields: Partial<AgentTask>
-): AgentTask {
-  const db = getDb();
-  const current = getTaskById(id);
+): Promise<AgentTask> {
+  const db = await getDb();
+  const current = await getTaskById(id);
 
   if (!current) {
     throw new Error(`Task ${id} not found.`);
@@ -235,7 +254,7 @@ export function updateTask(
   const entries = Object.entries(fields).filter(([key]) => key !== "id");
 
   if (entries.length === 0) {
-    return getTaskById(id)!;
+    return (await getTaskById(id))!;
   }
 
   for (const [key] of entries) {
@@ -254,45 +273,47 @@ export function updateTask(
     params[key] = value;
   }
 
-  db.prepare(
-    `UPDATE agent_tasks
+  await db.execute({
+    sql: `UPDATE agent_tasks
      SET ${setClause}, updated_at = @updated_at
-     WHERE id = @id`
-  ).run({
-    ...params,
-    updated_at: nowIso(),
+     WHERE id = @id`,
+    args: {
+      ...params,
+      updated_at: nowIso(),
+    },
   });
 
-  return getTaskById(id)!;
+  return (await getTaskById(id))!;
 }
 
-export function touchHeartbeat(id: string): void {
-  const db = getDb();
+export async function touchHeartbeat(id: string): Promise<void> {
+  const db = await getDb();
   const timestamp = nowIso();
 
-  db.prepare(
-    `UPDATE agent_tasks
+  await db.execute({
+    sql: `UPDATE agent_tasks
      SET last_activity_at = @ts,
          heartbeat_at = @ts,
          updated_at = @ts
-     WHERE id = @id`
-  ).run({
-    ts: timestamp,
-    id,
+     WHERE id = @id`,
+    args: {
+      ts: timestamp,
+      id,
+    },
   });
 }
 
 /** Atomically claims a queued task, preventing a second worker from running it. */
-export function claimTask(
+export async function claimTask(
   id: string,
   workerId: string,
   executionId: string
-): AgentTask | null {
-  const db = getDb();
+): Promise<AgentTask | null> {
+  const db = await getDb();
   const timestamp = nowIso();
 
-  const result = db
-    .prepare(`
+  const result = await db.execute({
+    sql: `
       UPDATE agent_tasks
       SET status = 'RUNNING',
           worker_id = @workerId,
@@ -304,27 +325,28 @@ export function claimTask(
           updated_at = @ts
       WHERE id = @id
         AND status = 'QUEUED'
-    `)
-    .run({
+    `,
+    args: {
       id,
       workerId,
       executionId,
       ts: timestamp,
-    });
+    },
+  });
 
-  return result.changes === 1 ? getTaskById(id) : null;
+  return result.rowsAffected === 1 ? getTaskById(id) : null;
 }
 
-export function claimSubtask(
+export async function claimSubtask(
   id: string,
   workerId: string,
   executionId: string
-): AgentTask | null {
-  const db = getDb();
+): Promise<AgentTask | null> {
+  const db = await getDb();
   const timestamp = nowIso();
 
-  const result = db
-    .prepare(`
+  const result = await db.execute({
+    sql: `
       UPDATE agent_tasks
       SET status = 'RUNNING',
           worker_id = @workerId,
@@ -337,22 +359,23 @@ export function claimSubtask(
           next_retry_at = NULL
       WHERE id = @id
         AND status IN ('QUEUED', 'RETRYING')
-    `)
-    .run({
+    `,
+    args: {
       id,
       workerId,
       executionId,
       ts: timestamp,
-    });
+    },
+  });
 
-  return result.changes === 1 ? getTaskById(id) : null;
+  return result.rowsAffected === 1 ? getTaskById(id) : null;
 }
 
 /** Recomputes a parent task's aggregate progress from its subtasks. */
-export function recomputeParentProgress(
+export async function recomputeParentProgress(
   parentTaskId: string
-): AgentTask {
-  const subtasks = listSubtasks(parentTaskId);
+): Promise<AgentTask> {
+  const subtasks = await listSubtasks(parentTaskId);
   const total = subtasks.length;
 
   const completed = subtasks.filter(

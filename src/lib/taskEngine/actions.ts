@@ -1,4 +1,16 @@
-import { getDb } from "@/lib/db";
+/**
+ * MILESTONE 3E — VERCEL:
+ * Async because the model layer is now async. The two multi-row updates
+ * below (`retryTask`, `cancelTask`) previously used better-sqlite3's
+ * synchronous db.transaction() wrapper around a loop of updateTask() calls.
+ * @libsql/client doesn't support wrapping arbitrary async JS callbacks in a
+ * transaction the same way, so these now just await updateTask() for each
+ * row in sequence. Each individual updateTask() call is still atomic; what's
+ * lost is strict all-or-nothing atomicity across the *whole* batch of rows,
+ * which is an acceptable tradeoff here since these are user-triggered,
+ * single-caller actions rather than concurrent engine operations.
+ */
+
 import {
   getTaskById,
   listSubtasks,
@@ -20,8 +32,8 @@ export class TaskActionError extends Error {
   }
 }
 
-function requireOwnedTask(id: string, userId: string): AgentTask {
-  const task = getTaskById(id);
+async function requireOwnedTask(id: string, userId: string): Promise<AgentTask> {
+  const task = await getTaskById(id);
 
   if (!task) {
     throw new TaskActionError("Task not found.", 404);
@@ -34,8 +46,8 @@ function requireOwnedTask(id: string, userId: string): AgentTask {
   return task;
 }
 
-export function pauseTask(id: string, userId: string): AgentTask {
-  const task = requireOwnedTask(id, userId);
+export async function pauseTask(id: string, userId: string): Promise<AgentTask> {
+  const task = await requireOwnedTask(id, userId);
 
   /*
    * The authoritative task state machine permits RUNNING → PAUSED.
@@ -48,7 +60,7 @@ export function pauseTask(id: string, userId: string): AgentTask {
     );
   }
 
-  const updated = updateTask(id, {
+  const updated = await updateTask(id, {
     status: "PAUSED",
     paused_at: nowIso(),
     worker_id: null,
@@ -56,7 +68,7 @@ export function pauseTask(id: string, userId: string): AgentTask {
     heartbeat_at: null,
   });
 
-  logActivity({
+  await logActivity({
     user_id: userId,
     task_id: id,
     event_type: "TASK_PAUSED",
@@ -66,8 +78,8 @@ export function pauseTask(id: string, userId: string): AgentTask {
   return updated;
 }
 
-export function resumeTask(id: string, userId: string): AgentTask {
-  const task = requireOwnedTask(id, userId);
+export async function resumeTask(id: string, userId: string): Promise<AgentTask> {
+  const task = await requireOwnedTask(id, userId);
 
   if (task.status !== "PAUSED" && task.status !== "NEEDS_INPUT") {
     throw new TaskActionError(
@@ -80,14 +92,14 @@ export function resumeTask(id: string, userId: string): AgentTask {
    * subtasks were already reset to QUEUED at that time — resuming just
    * means "go ahead and continue."
    */
-  const updated = updateTask(id, {
+  const updated = await updateTask(id, {
     status: "RUNNING",
     requires_user_input: 0,
     paused_at: null,
     last_activity_at: nowIso(),
   });
 
-  logActivity({
+  await logActivity({
     user_id: userId,
     task_id: id,
     event_type: "TASK_RESUMED",
@@ -97,10 +109,10 @@ export function resumeTask(id: string, userId: string): AgentTask {
   return updated;
 }
 
-export function retryTask(id: string, userId: string): AgentTask {
-  const task = requireOwnedTask(id, userId);
+export async function retryTask(id: string, userId: string): Promise<AgentTask> {
+  const task = await requireOwnedTask(id, userId);
 
-  const subtasks = listSubtasks(id);
+  const subtasks = await listSubtasks(id);
   const failedSubtasks = subtasks.filter(
     (s) => s.status === "FAILED"
   );
@@ -118,27 +130,21 @@ export function retryTask(id: string, userId: string): AgentTask {
     );
   }
 
-  const db = getDb();
+  for (const s of failedSubtasks) {
+    await updateTask(s.id, {
+      status: "QUEUED",
+      retry_count: 0,
+      error_message: null,
+      next_retry_at: null,
+      completed_at: null,
+      worker_id: null,
+      execution_id: null,
+      heartbeat_at: null,
+      last_attempt_at: null,
+    });
+  }
 
-  const resetSubtasks = db.transaction((rows: AgentTask[]) => {
-    for (const s of rows) {
-      updateTask(s.id, {
-        status: "QUEUED",
-        retry_count: 0,
-        error_message: null,
-        next_retry_at: null,
-        completed_at: null,
-        worker_id: null,
-        execution_id: null,
-        heartbeat_at: null,
-        last_attempt_at: null,
-      });
-    }
-  });
-
-  resetSubtasks(failedSubtasks);
-
-  const updated = updateTask(id, {
+  const updated = await updateTask(id, {
     status: "QUEUED",
     error_message: null,
     completed_at: null,
@@ -149,7 +155,7 @@ export function retryTask(id: string, userId: string): AgentTask {
     last_attempt_at: null,
   });
 
-  logActivity({
+  await logActivity({
     user_id: userId,
     task_id: id,
     event_type: "TASK_RETRYING",
@@ -162,8 +168,8 @@ export function retryTask(id: string, userId: string): AgentTask {
   return updated;
 }
 
-export function cancelTask(id: string, userId: string): AgentTask {
-  const task = requireOwnedTask(id, userId);
+export async function cancelTask(id: string, userId: string): Promise<AgentTask> {
+  const task = await requireOwnedTask(id, userId);
 
   if (
     [
@@ -178,30 +184,25 @@ export function cancelTask(id: string, userId: string): AgentTask {
     );
   }
 
-  const subtasks = listSubtasks(id);
-  const db = getDb();
+  const subtasks = await listSubtasks(id);
 
-  const cancelChildren = db.transaction((rows: AgentTask[]) => {
-    for (const s of rows) {
-      if (
-        !["COMPLETED", "FAILED", "CANCELLED"].includes(
-          s.status
-        )
-      ) {
-        updateTask(s.id, {
-          status: "CANCELLED",
-          completed_at: nowIso(),
-          worker_id: null,
-          execution_id: null,
-          heartbeat_at: null,
-        });
-      }
+  for (const s of subtasks) {
+    if (
+      !["COMPLETED", "FAILED", "CANCELLED"].includes(
+        s.status
+      )
+    ) {
+      await updateTask(s.id, {
+        status: "CANCELLED",
+        completed_at: nowIso(),
+        worker_id: null,
+        execution_id: null,
+        heartbeat_at: null,
+      });
     }
-  });
+  }
 
-  cancelChildren(subtasks);
-
-  const updated = updateTask(id, {
+  const updated = await updateTask(id, {
     status: "CANCELLED",
     completed_at: nowIso(),
     worker_id: null,
@@ -209,7 +210,7 @@ export function cancelTask(id: string, userId: string): AgentTask {
     heartbeat_at: null,
   });
 
-  logActivity({
+  await logActivity({
     user_id: userId,
     task_id: id,
     event_type: "TASK_CANCELLED",

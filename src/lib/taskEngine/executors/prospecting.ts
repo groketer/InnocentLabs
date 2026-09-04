@@ -101,7 +101,18 @@ import {
 
 const MODEL = "gpt-4.1-mini";
 
-const MAX_TURNS = 10;
+// MILESTONE 3E — VERCEL: this was 10. Each agent turn with live web search
+// can take 5-15+ seconds, so 10 turns could take 60-150+ seconds — which
+// routinely exceeded /api/tasks/tick's 60s Vercel function limit and left
+// the subtask (and sometimes its parent) stuck in RUNNING with no chance
+// to save a result. 6 keeps a single step's realistic worst case
+// comfortably under the limit. If you want deeper per-prospect research
+// than 6 turns reliably allows, the tradeoff is real: either accept
+// somewhat shallower research per step, or move to a Vercel plan with a
+// higher function duration limit and raise both this and maxDuration in
+// src/app/api/tasks/tick/route.ts and src/app/api/cron/daily/route.ts to
+// match.
+const MAX_TURNS = 6;
 
 const LIVE_PORTFOLIO_REFRESH_MAX_TURNS = 6;
 

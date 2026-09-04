@@ -453,6 +453,100 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
 }
 
 /**
+ * A Vercel serverless function that times out (see maxDuration on
+ * /api/tasks/tick) is killed mid-execution with no chance to run any
+ * cleanup code — so a subtask that was claimed (status RUNNING,
+ * heartbeat set) right before its actual work overran the time limit is
+ * left stuck in RUNNING forever. Nothing else was resetting it: the only
+ * existing recovery, recoverInterruptedTasks() below, runs once per cold
+ * start, and Vercel can keep reusing the same warm container across many
+ * requests without ever cold-starting again — so a task orphaned by a
+ * mid-flight timeout could stay stuck indefinitely with no code path that
+ * would ever notice.
+ *
+ * This runs at the top of every tick() instead, so it doesn't depend on
+ * cold-start timing at all. STALE_AFTER_MS is set comfortably above
+ * /api/tasks/tick's maxDuration (60s) so a step that's still genuinely in
+ * progress within its allowed time is never mistaken for orphaned.
+ */
+const STALE_AFTER_MS = 90_000;
+
+async function recoverStaleRunningTasks(): Promise<void> {
+  const db = await getDb();
+  const staleThreshold = new Date(Date.now() - STALE_AFTER_MS).toISOString();
+
+  const staleSubtasksResult = await db.execute({
+    sql: `
+      SELECT * FROM agent_tasks
+      WHERE status = 'RUNNING'
+        AND parent_task_id IS NOT NULL
+        AND (heartbeat_at IS NULL OR heartbeat_at < ?)
+    `,
+    args: [staleThreshold],
+  });
+  const staleSubtasks = staleSubtasksResult.rows as unknown as AgentTask[];
+
+  const affectedParents = new Set<string>();
+
+  for (const s of staleSubtasks) {
+    await updateTask(s.id, {
+      status: "QUEUED",
+      current_step: null,
+      worker_id: null,
+      execution_id: null,
+      heartbeat_at: null,
+    });
+    await logActivity({
+      user_id: s.user_id,
+      task_id: s.id,
+      event_type: "TASK_RETRYING",
+      message: `${s.title}: reset to queued — the previous attempt appears to have timed out without finishing.`,
+    });
+    if (s.parent_task_id) affectedParents.add(s.parent_task_id);
+  }
+
+  for (const parentId of affectedParents) {
+    await recomputeParentProgress(parentId);
+  }
+
+  // Top-level tasks stuck between being claimed and either finishing
+  // planSubtasks()/runTask() or creating any subtasks — same idea, but
+  // only when they have zero subtasks so far. A top-level task that
+  // already has subtasks must NOT be reset to QUEUED: that would re-run
+  // planSubtasks() and create a duplicate set of subtasks. Its own
+  // progress recovers naturally once the subtask reset above lets a
+  // fresh tick() pick the work back up.
+  const staleTopLevelResult = await db.execute({
+    sql: `
+      SELECT * FROM agent_tasks t
+      WHERE t.status = 'RUNNING'
+        AND t.parent_task_id IS NULL
+        AND (t.heartbeat_at IS NULL OR t.heartbeat_at < ?)
+        AND NOT EXISTS (
+          SELECT 1 FROM agent_tasks c WHERE c.parent_task_id = t.id
+        )
+    `,
+    args: [staleThreshold],
+  });
+  const staleTopLevel = staleTopLevelResult.rows as unknown as AgentTask[];
+
+  for (const t of staleTopLevel) {
+    await updateTask(t.id, {
+      status: "QUEUED",
+      worker_id: null,
+      execution_id: null,
+      heartbeat_at: null,
+    });
+    await logActivity({
+      user_id: t.user_id,
+      task_id: t.id,
+      event_type: "TASK_RETRYING",
+      message: `${t.title}: reset to queued — the previous attempt appears to have timed out without finishing.`,
+    });
+  }
+}
+
+/**
  * One tick: advance every active top-level task by exactly one real step
  * each. Safe to call concurrently/repeatedly — claimTask/claimSubtask make
  * task claiming atomic, so overlapping callers (e.g. a client poller and a
@@ -460,6 +554,8 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
  * advance the same task twice.
  */
 export async function tick(): Promise<void> {
+  await recoverStaleRunningTasks();
+
   const tasks = await listActiveTopLevelTasks();
 
   for (const task of tasks) {

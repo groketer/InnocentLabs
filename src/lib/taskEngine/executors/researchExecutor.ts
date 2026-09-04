@@ -30,7 +30,10 @@ import type { StepResult, TaskExecutor } from "../types";
 
 const MODEL = "gpt-4.1-mini";
 
-const MAX_TURNS = 10;
+// MILESTONE 3E — VERCEL: was 10; see the matching comment in
+// executors/prospecting.ts — reduced to fit reliably within the 60s
+// Vercel function limit instead of leaving tasks stuck in RUNNING.
+const MAX_TURNS = 6;
 const MAX_REPORT_CHARS = 60_000;
 const MAX_CONTEXT_CHARS = 40_000;
 

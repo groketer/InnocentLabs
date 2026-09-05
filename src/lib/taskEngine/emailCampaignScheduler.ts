@@ -68,11 +68,7 @@ async function hasCampaignTaskToday(userId: string): Promise<boolean> {
   return !!row;
 }
 
-async function createDailyCampaignTask(userId: string): Promise<void> {
-  if (await hasCampaignTaskToday(userId)) {
-    return;
-  }
-
+async function createCampaignTask(userId: string): Promise<void> {
   const task = await createTask({
     user_id: userId,
     parent_task_id: null,
@@ -91,6 +87,14 @@ async function createDailyCampaignTask(userId: string): Promise<void> {
     event_type: "TASK_CREATED",
     message: `${CAMPAIGN_TITLE}: created automatically.`,
   });
+}
+
+async function createDailyCampaignTask(userId: string): Promise<void> {
+  if (await hasCampaignTaskToday(userId)) {
+    return;
+  }
+
+  await createCampaignTask(userId);
 }
 
 export async function ensureDailyEmailCampaignTask(): Promise<void> {
@@ -114,6 +118,34 @@ export async function ensureDailyEmailCampaignTask(): Promise<void> {
       error
     );
   }
+}
+
+/**
+ * For the "Run outreach now" button (see /api/followups/run-now).
+ *
+ * Deliberately NOT gated by hasCampaignTaskToday() — that check exists to
+ * keep the AUTOMATIC once-daily scheduler from creating duplicates, but a
+ * person explicitly clicking "run this now" wants a genuinely fresh scan
+ * right then, even if today's automatic task already ran and finished.
+ * Without this, anyone whose prospects got skipped earlier in the day
+ * (e.g. while an old setting was still in effect) would have no way to
+ * give them a fresh chance until tomorrow.
+ *
+ * Still respects autonomous_campaigns being off — the caller checks that
+ * before calling this, same as the daily path.
+ */
+export async function createCampaignTaskNow(): Promise<{
+  created: boolean;
+  reason?: string;
+}> {
+  const userId = await getCurrentUserId();
+
+  if (!userId) {
+    return { created: false, reason: "No existing user context yet." };
+  }
+
+  await createCampaignTask(userId);
+  return { created: true };
 }
 
 export function startEmailCampaignScheduler(): void {

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ensureDailyEmailCampaignTask } from "@/lib/taskEngine/emailCampaignScheduler";
+import { createCampaignTaskNow } from "@/lib/taskEngine/emailCampaignScheduler";
 import { tick } from "@/lib/taskEngine/engine";
 import { listActiveTopLevelTasks } from "@/lib/models/tasks";
 import { getSettings } from "@/lib/models/settings";
@@ -62,7 +62,14 @@ export async function POST() {
       );
     }
 
-    await ensureDailyEmailCampaignTask();
+    const { created, reason } = await createCampaignTaskNow();
+
+    if (!created) {
+      return NextResponse.json(
+        { error: reason ?? "Could not start an outreach run right now." },
+        { status: 400 }
+      );
+    }
 
     const deadline = Date.now() + TICK_LOOP_BUDGET_MS;
     let ticks = 0;

@@ -58,6 +58,20 @@ export const STALE_HEARTBEAT_MS = 20000; // used by the UI to flag "possibly sta
 const RETRY_BASE_DELAY_MS = 15000;
 const WORKER_ID = `process-${process.pid}`;
 
+/**
+ * "Auditing" was hardcoded here from when website_audit was the only
+ * executor using the subtask pattern. web_prospecting and email_campaign
+ * reuse the exact same runSubtaskStep() below, so without this map every
+ * task type showed "Auditing" as its current step — including, visibly
+ * confusingly, while actually sending outreach emails.
+ */
+const IN_PROGRESS_LABEL_BY_TASK_TYPE: Record<string, string> = {
+  website_audit: "Auditing",
+  web_prospecting: "Researching",
+  email_campaign: "Sending",
+  portfolio_refresh: "Refreshing",
+};
+
 declare global {
   // eslint-disable-next-line no-var
   var __innocentIntelligenceEngineStarted: boolean | undefined;
@@ -339,7 +353,9 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
   });
   await updateTask(parent.id, {
     current_subtask: subtask.title,
-    current_step: isRetry ? "Retrying a previous failure" : "Auditing",
+    current_step: isRetry
+      ? "Retrying a previous failure"
+      : IN_PROGRESS_LABEL_BY_TASK_TYPE[parent.task_type] ?? "In progress",
     last_activity_at: nowIso(),
   });
 

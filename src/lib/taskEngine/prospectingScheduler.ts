@@ -27,6 +27,7 @@
 import { getDb } from "@/lib/db";
 import { createTask } from "@/lib/models/tasks";
 import { logActivity } from "@/lib/models/activity";
+import { getSettings } from "@/lib/models/settings";
 
 const SCHEDULER_INTERVAL_MS = 15 * 60 * 1000;
 
@@ -113,6 +114,12 @@ async function createDailyProspectingTask(userId: string): Promise<void> {
  * loop or the Vercel daily cron route.
  */
 export async function ensureDailyProspectingTask(): Promise<void> {
+  const settings = await getSettings();
+
+  if (!settings.autonomous_prospecting) {
+    return;
+  }
+
   const userId = await getCurrentUserId();
 
   if (!userId) {

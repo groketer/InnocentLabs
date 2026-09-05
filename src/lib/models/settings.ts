@@ -23,6 +23,10 @@ export interface AppSettings {
   daily_send_limit: number;
   /** When true, the first email in any sequence needs a person to approve it before it sends. */
   require_manual_approval: boolean;
+  /** When true, the daily scheduler creates prospecting tasks on its own, with no prompting. */
+  autonomous_prospecting: boolean;
+  /** When true, the daily scheduler creates outreach-sending tasks on its own, with no prompting. */
+  autonomous_campaigns: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -30,14 +34,22 @@ export const DEFAULT_SETTINGS: AppSettings = {
   min_days_between_follow_ups: 3,
   daily_send_limit: 50,
   require_manual_approval: false,
+  autonomous_prospecting: true,
+  autonomous_campaigns: true,
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<
   keyof AppSettings
 >;
 
+const BOOLEAN_KEYS = new Set<keyof AppSettings>([
+  "require_manual_approval",
+  "autonomous_prospecting",
+  "autonomous_campaigns",
+]);
+
 function coerce(key: keyof AppSettings, raw: string): number | boolean {
-  if (key === "require_manual_approval") {
+  if (BOOLEAN_KEYS.has(key)) {
     return raw === "true";
   }
   const n = Number(raw);
@@ -77,6 +89,8 @@ export interface UpdateSettingsInput {
   min_days_between_follow_ups?: number;
   daily_send_limit?: number;
   require_manual_approval?: boolean;
+  autonomous_prospecting?: boolean;
+  autonomous_campaigns?: boolean;
 }
 
 function validate(input: UpdateSettingsInput): void {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { formatTimestamp } from "@/lib/format";
 import type {
   Prospect,
@@ -42,10 +43,18 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export function ProspectsContent() {
+  const searchParams = useSearchParams();
+  const initialStatus = searchParams.get("qualification_status");
+  const initialIndex = STATUS_FILTERS.findIndex(
+    (f) => f.value === initialStatus
+  );
+
   const [prospects, setProspects] = useState<ProspectWithProduct[] | null>(
     null
   );
-  const [filterIndex, setFilterIndex] = useState(0);
+  const [filterIndex, setFilterIndex] = useState(
+    initialIndex >= 0 ? initialIndex : 0
+  );
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
 

@@ -106,6 +106,50 @@ export function SettingsContent() {
       )}
 
       <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">
+        <h2 className="text-sm font-semibold text-white">Autonomy</h2>
+        <p className="mt-1 text-xs text-white/40">
+          When on, the agent creates and runs this work on its own, every
+          day, with no prompting from you. Turn either off to require you
+          to trigger that kind of work yourself (from Products or the
+          dashboard).
+        </p>
+
+        <label className="mt-4 flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={settings.autonomous_prospecting}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                autonomous_prospecting: e.target.checked,
+              })
+            }
+            className="h-4 w-4 rounded border-ink-600 bg-ink-800"
+          />
+          <span className="text-sm text-white/70">
+            Autonomous prospecting — find new prospects on its own, daily
+          </span>
+        </label>
+
+        <label className="mt-3 flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={settings.autonomous_campaigns}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                autonomous_campaigns: e.target.checked,
+              })
+            }
+            className="h-4 w-4 rounded border-ink-600 bg-ink-800"
+          />
+          <span className="text-sm text-white/70">
+            Autonomous outreach — send due emails on its own, daily
+          </span>
+        </label>
+      </div>
+
+      <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">
         <h2 className="text-sm font-semibold text-white">Follow-up behavior</h2>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-3">

@@ -12,7 +12,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/", enabled: true },
   { label: "Intelligence", href: "/intelligence", enabled: true },
-  { label: "Prospects", href: "/prospects", enabled: false },
+  { label: "Prospects", href: "/prospects", enabled: true },
   { label: "Follow-ups", href: "/follow-ups", enabled: false },
   { label: "Products", href: "/products", enabled: false },
   { label: "Activity", href: "/activity", enabled: true },

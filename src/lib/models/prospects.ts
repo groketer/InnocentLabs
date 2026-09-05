@@ -911,3 +911,62 @@ export async function listProspects(
 
   return rows.map(mapProspectRow);
 }
+
+/**
+ * Updates a prospect's qualification status.
+ *
+ * This is intentionally narrow — the Prospects view lets a person triage
+ * (qualified / not a fit / needs review) what the research already
+ * gathered. It does not let evidence, contact details, or other
+ * research-derived fields be edited here; those come only from the
+ * prospecting executor's own evidence-backed process.
+ */
+export async function updateProspect(
+  userId: string,
+  id: string,
+  fields: { qualification_status: ProspectQualificationStatus }
+): Promise<Prospect> {
+  const normalizedUserId = userId.trim();
+  const normalizedId = id.trim();
+
+  if (!normalizedUserId || !normalizedId) {
+    throw new Error("A user and prospect id are required.");
+  }
+
+  if (!isQualificationStatus(fields.qualification_status)) {
+    throw new Error(
+      `"${fields.qualification_status}" is not a valid qualification status.`
+    );
+  }
+
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      UPDATE prospects
+      SET
+        qualification_status = @qualification_status,
+        updated_at = @updated_at
+      WHERE id = @id
+        AND user_id = @user_id
+    `,
+    args: {
+      id: normalizedId,
+      user_id: normalizedUserId,
+      qualification_status: fields.qualification_status,
+      updated_at: new Date().toISOString(),
+    },
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Prospect not found.");
+  }
+
+  const updated = await getProspectById(normalizedUserId, normalizedId);
+
+  if (!updated) {
+    throw new Error("Prospect was updated but could not be retrieved afterward.");
+  }
+
+  return updated;
+}

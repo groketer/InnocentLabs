@@ -34,6 +34,7 @@
  */
 
 import { startPortfolioScheduler } from "./portfolioScheduler";
+import { startProspectingScheduler } from "./prospectingScheduler";
 import {
   listActiveTopLevelTasks,
   listSubtasks,
@@ -658,6 +659,7 @@ export function startEngine(): void {
   global.__innocentIntelligenceEngineStarted = true;
 
   startPortfolioScheduler();
+  startProspectingScheduler();
 
   recoverInterruptedTasks().catch((err) =>
     console.error("[taskEngine] recoverInterruptedTasks() threw:", err)

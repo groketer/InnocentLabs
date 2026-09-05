@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureDailyPortfolioRefresh } from "@/lib/taskEngine/portfolioScheduler";
+import { ensureDailyProspectingTask } from "@/lib/taskEngine/prospectingScheduler";
 import { tick } from "@/lib/taskEngine/engine";
 
 export const runtime = "nodejs";
@@ -16,7 +17,11 @@ export const dynamic = "force-dynamic";
  *    function is called by the 15-minute interval in
  *    portfolioScheduler.ts instead — see that file for why the two
  *    trigger mechanisms differ by environment).
- * 2. tick() — one safety tick, so that task (and any other still-active
+ * 2. ensureDailyProspectingTask() — creates one autonomous prospecting task
+ *    per day with no product specified, letting the executor pick one on
+ *    its own. This is what makes prospecting proactive instead of only
+ *    ever running when a person manually starts it.
+ * 3. tick() — one safety tick, so that task (and any other still-active
  *    task) gets a chance to make progress even if nobody has the app
  *    open in a browser tab that day. On Hobby this is the ONLY
  *    guaranteed engine progress on days nobody visits the app; the rest
@@ -43,6 +48,7 @@ export async function GET(req: NextRequest) {
 
   try {
     await ensureDailyPortfolioRefresh();
+    await ensureDailyProspectingTask();
     await tick();
 
     return NextResponse.json({ ok: true, ranAt: new Date().toISOString() });

@@ -80,7 +80,9 @@ import { Agent, run, webSearchTool } from "@openai/agents";
 import { z } from "zod";
 
 import type { AgentTask } from "@/lib/types";
-import type { StepResult, TaskExecutor } from "../types";
+import type { StepResult, SubtaskPlanItem, TaskExecutor } from "../types";
+
+import { getDb } from "@/lib/db";
 
 import {
   getProductByName,
@@ -121,9 +123,24 @@ const MAX_CONTEXT_CHARS = 40_000;
 const MAX_OUTPUT_CHARS = 60_000;
 
 /**
- * Ten is a ceiling, not a quota.
+ * MAX_PROSPECTS_PER_ROUND is a ceiling per round, not a quota.
  */
-const MAX_PROSPECTS_PER_TASK = 10;
+// MILESTONE 3E — VERCEL: web_prospecting used to be one single-shot runTask()
+// call targeting "up to 10" prospects. Finding 20+ evidence-backed,
+// verified-email prospects via live web search genuinely needs more
+// searching than fits in one ~60s Vercel function invocation (see the
+// MAX_TURNS comment above — turns were cut from 10 to 6 specifically to
+// stop timeouts). Rather than reintroduce timeouts by just raising the
+// target, web_prospecting now runs as several smaller "rounds"
+// (planSubtasks/runSubtask, the same pattern executors/websiteAudit.ts
+// already uses), each a bounded, independent agent run that fits safely in
+// one invocation. Rounds accumulate toward the overall target because each
+// round is told which prospects earlier rounds already found and asked for
+// different ones. PROSPECTING_ROUNDS × MAX_PROSPECTS_PER_ROUND gives
+// meaningful headroom above 20 to absorb duplicates and candidates without
+// a verifiable public email.
+const PROSPECTING_ROUNDS = 4;
+const MAX_PROSPECTS_PER_ROUND = 8;
 
 /**
  * Defensive upper bound on evidence items stored for one prospect.
@@ -644,6 +661,55 @@ async function extractRequestedProductHint(
 }
 
 /**
+ * Autonomously picks a product to prospect for when the task didn't name
+ * one and none could be inferred from its title/description.
+ *
+ * This is what lets the agent operate proactively rather than failing with
+ * "does not identify one unambiguous Innocent Labs product" every time a
+ * prospecting task doesn't spell out a product by name. It's a rotation,
+ * not a judgment call: pick whichever eligible portfolio product currently
+ * has the fewest persisted prospects, so autonomous/repeated prospecting
+ * naturally cycles through the whole portfolio over time instead of only
+ * ever working the same one or two products. Ties break alphabetically for
+ * determinism.
+ *
+ * listProductsWithUrl() already excludes the Innocent Marketplace hub
+ * record itself (asset_type "hub") and anything discontinued, so this can
+ * never select Innocent Labs' own umbrella listing as "the product to
+ * market" — only real, individual portfolio products are eligible.
+ */
+async function autoSelectProductForProspecting(): Promise<string | null> {
+  const products = await listProductsWithUrl();
+
+  if (products.length === 0) {
+    return null;
+  }
+
+  const db = await getDb();
+
+  const countsResult = await db.execute(
+    `SELECT product_id, COUNT(*) as c FROM prospects WHERE product_id IS NOT NULL GROUP BY product_id`
+  );
+
+  const counts = new Map<string, number>(
+    (
+      countsResult.rows as unknown as Array<{
+        product_id: string;
+        c: number | string;
+      }>
+    ).map((row) => [row.product_id, Number(row.c)])
+  );
+
+  const sorted = [...products].sort((a, b) => {
+    const diff = (counts.get(a.id) ?? 0) - (counts.get(b.id) ?? 0);
+    if (diff !== 0) return diff;
+    return a.name.localeCompare(b.name);
+  });
+
+  return sorted[0].name;
+}
+
+/**
  * Resolves a product hint against the now-refreshed local portfolio.
  *
  * This supports the important Milestone 3D case where a product is found
@@ -1052,6 +1118,23 @@ Examples include:
 - researchers;
 - other identifiable people.
 
+==================================================
+PROSPECTING ALWAYS LOOKS OUTWARD
+==================================================
+
+A prospect is always someone OUTSIDE the Innocent Labs ecosystem — a member
+of the market Innocent Labs could sell to.
+
+A prospect is NEVER:
+
+- Innocent Labs itself;
+- Innocent Mwangi;
+- any other Innocent Labs product;
+- any Innocent Labs team member, page, or listing.
+
+Innocent Labs and its portfolio are what you are marketing FOR — the thing
+being strategized about — never a candidate to be discovered AS a prospect.
+
 Do NOT assume prospecting means finding companies only.
 
 For some Innocent Labs products, an individual may be the most appropriate
@@ -1327,13 +1410,13 @@ Do NOT:
 PROSPECT COUNT
 ==================================================
 
-Return UP TO ${MAX_PROSPECTS_PER_TASK} strong prospects.
+Return UP TO ${MAX_PROSPECTS_PER_ROUND} strong prospects this round.
 
-TEN IS A CEILING, NOT A QUOTA.
+THIS IS A CEILING, NOT A QUOTA.
 
 Do NOT pad the result.
 
-It is better to return 2 strong contactable prospects than 10 weak ones.
+It is better to return 2 strong contactable prospects than ${MAX_PROSPECTS_PER_ROUND} weak ones.
 
 ==================================================
 EVIDENCE REQUIREMENT
@@ -2101,26 +2184,19 @@ export const prospectingExecutor:
   taskType:
     "web_prospecting",
 
-  async runTask(
+  async planSubtasks(
     task: AgentTask
-  ): Promise<StepResult> {
+  ): Promise<SubtaskPlanItem[]> {
     const taskContext =
       getTaskContext(task);
 
     if (
       !taskContext.trim()
     ) {
-      return {
-        success: false,
-
-        summary:
-          "No prospecting request was supplied.",
-
-        errorMessage:
-          "The web_prospecting task has no usable task context.",
-
-        transientFailure: false,
-      };
+      // A task always has a title (createTask requires one), so this is a
+      // defensive fallback rather than something expected to happen in
+      // normal use — there's no context at all to prospect from.
+      return [];
     }
 
     /* ---------------------------------------------------------------------- */
@@ -2130,7 +2206,10 @@ export const prospectingExecutor:
     /**
      * IMPORTANT:
      *
-     * This happens on EVERY prospecting execution.
+     * This happens once per task, at planning time — not once per round —
+     * since the discovered/updated portfolio doesn't change between rounds
+     * of the SAME task and re-fetching it every round would just be wasted
+     * work eating into each round's time budget.
      *
      * It restores the earlier requirement that prospecting remain aware of
      * newly listed products on innocent.co.ke.
@@ -2169,53 +2248,101 @@ export const prospectingExecutor:
       }
     }
 
+    /**
+     * MILESTONE 3E — AUTONOMOUS OPERATION:
+     *
+     * Previously, a task that didn't explicitly name a product (or
+     * couldn't be matched to one) simply failed with "does not identify
+     * one unambiguous Innocent Labs product." That's the right behavior
+     * for a genuinely ambiguous request where the person meant something
+     * specific — but it made the agent unable to act on its own initiative
+     * at all: every single prospecting task required a human to type an
+     * exact, matchable product reference first.
+     *
+     * When nothing else identified a product, the executor now picks one
+     * itself — see autoSelectProductForProspecting()'s doc comment for how
+     * (a rotation favoring whichever product has the fewest prospects so
+     * far, never Innocent Labs' own umbrella listing). This is a
+     * deterministic, code-level decision made ONCE here before the agent
+     * is ever invoked — the agent itself is still explicitly told not to
+     * substitute a different product mid-run (see buildInstructions() and
+     * the per-round request below), preserving the original safeguard
+     * against the *model* silently drifting to a different product.
+     */
     if (!productName) {
-      return {
-        success: false,
+      productName =
+        await autoSelectProductForProspecting();
+    }
 
-        summary:
-          "The prospecting task does not identify one unambiguous Innocent Labs product.",
-
-        errorMessage:
-          "A single authoritative portfolio product must be identified before web prospecting can begin.",
-
-        transientFailure:
-          Boolean(
-            portfolioRefresh.error
-          ),
-
-        resultData: {
-          prospecting_type:
-            "web_prospecting",
-
-          evidence_status:
-            "ambiguous_or_missing_product_context",
-
-          task_id:
-            task.id,
-
-          live_marketplace_refresh: {
-            source:
-              INNOCENT_MARKETPLACE_URL,
-
-            discovered_products:
-              portfolioRefresh.discovered,
-
-            skipped_products:
-              portfolioRefresh.skipped,
-
-            error:
-              portfolioRefresh.error ??
-              null,
-          },
-        },
-      };
+    if (!productName) {
+      // Only reachable if the portfolio is genuinely empty — seed
+      // products exist by default, so this should not happen in practice.
+      return [];
     }
 
     const product =
       await getProductByName(
         productName
       );
+
+    if (!product) {
+      return [];
+    }
+
+    /**
+     * This is the authoritative product identity used for the entire
+     * task, across every round.
+     *
+     * No model output can replace it.
+     */
+    const items: SubtaskPlanItem[] = [];
+
+    for (
+      let round = 1;
+      round <= PROSPECTING_ROUNDS;
+      round++
+    ) {
+      items.push({
+        title: `Prospecting round ${round} of ${PROSPECTING_ROUNDS} for ${product.name}`,
+        description: `Product: ${product.name}\nRound: ${round} of ${PROSPECTING_ROUNDS}`,
+      });
+    }
+
+    return items;
+  },
+
+  async runSubtask(
+    parent: AgentTask,
+    subtask: AgentTask
+  ): Promise<StepResult> {
+    const taskContext =
+      getTaskContext(parent);
+
+    const productMatch =
+      subtask.description?.match(
+        /Product:\s*([^\n\r]+)/
+      );
+
+    const productName =
+      productMatch?.[1]?.trim();
+
+    const roundMatch =
+      subtask.description?.match(
+        /Round:\s*(\d+)\s*of\s*(\d+)/i
+      );
+
+    const roundNumber =
+      roundMatch?.[1] ?? "?";
+
+    const totalRounds =
+      roundMatch?.[2] ?? "?";
+
+    const product =
+      productName
+        ? await getProductByName(
+            productName
+          )
+        : null;
 
     if (!product) {
       return {
@@ -2225,12 +2352,9 @@ export const prospectingExecutor:
           "The requested product could not be found in the authoritative portfolio.",
 
         errorMessage:
-          `Product "${productName}" was not found in the authoritative portfolio after the live marketplace refresh.`,
+          `Product "${productName ?? "unknown"}" was not found in the authoritative portfolio.`,
 
-        transientFailure:
-          Boolean(
-            portfolioRefresh.error
-          ),
+        transientFailure: false,
 
         resultData: {
           prospecting_type:
@@ -2240,32 +2364,16 @@ export const prospectingExecutor:
             "product_not_found",
 
           requested_product:
-            productName,
+            productName ?? null,
 
           task_id:
-            task.id,
-
-          live_marketplace_refresh: {
-            source:
-              INNOCENT_MARKETPLACE_URL,
-
-            discovered_products:
-              portfolioRefresh.discovered,
-
-            skipped_products:
-              portfolioRefresh.skipped,
-
-            error:
-              portfolioRefresh.error ??
-              null,
-          },
+            subtask.id,
         },
       };
     }
 
     /**
-     * This is the authoritative product identity used for the entire
-     * execution.
+     * This is the authoritative product identity used for this round.
      *
      * No model output can replace it.
      */
@@ -2274,6 +2382,36 @@ export const prospectingExecutor:
 
     const authoritativeProductName =
       product.name;
+
+    /* ---------------------------------------------------------------------- */
+    /* Existing prospects — fetched BEFORE the agent runs                     */
+    /* ---------------------------------------------------------------------- */
+
+    /**
+     * Fetched up front (not just for post-hoc dedup like before) so this
+     * round's prompt can explicitly tell the agent who earlier rounds
+     * already found and ask for different ones. Without this, independent
+     * rounds would have no way to avoid repeatedly rediscovering the same
+     * handful of easy-to-find candidates.
+     */
+    const existing =
+      await listProspects(
+        parent.user_id,
+        {
+          product_id:
+            authoritativeProductId,
+        }
+      );
+
+    const alreadyFoundSummary =
+      existing.length > 0
+        ? existing
+            .map(
+              (p) =>
+                `- ${p.name}${p.organization ? ` (${p.organization})` : ""}`
+            )
+            .join("\n")
+        : "None yet — this is the first round for this product.";
 
     /* ---------------------------------------------------------------------- */
     /* Research request                                                       */
@@ -2298,17 +2436,14 @@ Its authoritative portfolio ID is:
 
 ${authoritativeProductId}
 
-LIVE MARKETPLACE CONTEXT
+ROUND CONTEXT
 
-The executor has just checked:
+This is round ${roundNumber} of ${totalRounds} of prospecting for this product within the same overall task.
 
-${INNOCENT_MARKETPLACE_URL}
+PROSPECTS ALREADY FOUND IN EARLIER ROUNDS FOR THIS PRODUCT
+(find NEW, DIFFERENT prospects — do not return any of these again):
 
-The live portfolio refresh result is:
-
-${JSON.stringify(
-  portfolioRefresh.discovered
-)}
+${alreadyFoundSummary}
 
 IMPORTANT:
 
@@ -2318,6 +2453,12 @@ IMPORTANT:
 - The product identity above comes from the authoritative portfolio database.
 - Empty or unknown product fields must remain unknown.
 - The final result must describe prospects relevant to this product.
+- A prospect is an external person or organization who might want or benefit
+  from this product. A prospect is NEVER Innocent Labs itself, another
+  Innocent Labs product, Innocent Mwangi, or anyone/anything already part of
+  the Innocent Labs portfolio or team. Prospecting always looks outward, at
+  the market Innocent Labs could sell to — never inward at Innocent Labs' own
+  ecosystem.
 - Prospects may be INDIVIDUALS or ORGANIZATIONS.
 - Do not assume an organization is required.
 - Actually perform web research.
@@ -2327,9 +2468,10 @@ IMPORTANT:
 - Do not guess email addresses.
 - Do not fabricate email addresses.
 - Do not include a prospect without contactable public email evidence.
-- Return UP TO ${MAX_PROSPECTS_PER_TASK} strong prospects.
-- Ten is a ceiling, not a quota.
+- Return UP TO ${MAX_PROSPECTS_PER_ROUND} strong prospects this round.
+- This is a ceiling, not a quota.
 - Do not pad the result with weak prospects.
+- Do not repeat anyone listed above as already found.
 - Do not perform outreach.
 
 FINAL RESPONSE REQUIREMENT:
@@ -2492,21 +2634,12 @@ Do not return explanatory prose outside the JSON object.
           )
           .slice(
             0,
-            MAX_PROSPECTS_PER_TASK
+            MAX_PROSPECTS_PER_ROUND
           );
 
       /* -------------------------------------------------------------------- */
-      /* Existing prospects                                                    */
+      /* Persistence                                                           */
       /* -------------------------------------------------------------------- */
-
-      const existing =
-        await listProspects(
-          task.user_id,
-          {
-            product_id:
-              authoritativeProductId,
-          }
-        );
 
       const persisted:
         Prospect[] = [];
@@ -2516,10 +2649,6 @@ Do not return explanatory prose outside the JSON object.
 
       const rejected:
         string[] = [];
-
-      /* -------------------------------------------------------------------- */
-      /* Persistence                                                           */
-      /* -------------------------------------------------------------------- */
 
       for (
         const candidate of
@@ -2543,10 +2672,10 @@ Do not return explanatory prose outside the JSON object.
           const prospect =
             await createProspect({
               user_id:
-                task.user_id,
+                parent.user_id,
 
               source_task_id:
-                task.id,
+                parent.id,
 
               name:
                 candidate.name,
@@ -2663,11 +2792,19 @@ Do not return explanatory prose outside the JSON object.
 
           search_objective:
             structuredOutput.search_objective ||
-            task.title,
+            subtask.title,
 
           qualification_method:
             structuredOutput.qualification_method ||
             "Evidence-based public-web qualification with public-email contactability.",
+
+          round:
+            Number(roundNumber) ||
+            null,
+
+          total_rounds:
+            Number(totalRounds) ||
+            null,
 
           prospects_found:
             candidates.length,
@@ -2716,21 +2853,6 @@ Do not return explanatory prose outside the JSON object.
             structuredOutput.evidence_gaps ??
             [],
 
-          live_marketplace_refresh: {
-            source:
-              INNOCENT_MARKETPLACE_URL,
-
-            discovered_products:
-              portfolioRefresh.discovered,
-
-            skipped_products:
-              portfolioRefresh.skipped,
-
-            error:
-              portfolioRefresh.error ??
-              null,
-          },
-
           evidence_status:
             evidenceStatus,
 
@@ -2740,8 +2862,8 @@ Do not return explanatory prose outside the JSON object.
           model:
             MODEL,
 
-          max_prospects_per_task:
-            MAX_PROSPECTS_PER_TASK,
+          max_prospects_per_round:
+            MAX_PROSPECTS_PER_ROUND,
 
           completed_at:
             new Date().toISOString(),
@@ -2779,21 +2901,6 @@ Do not return explanatory prose outside the JSON object.
 
             name:
               authoritativeProductName,
-          },
-
-          live_marketplace_refresh: {
-            source:
-              INNOCENT_MARKETPLACE_URL,
-
-            discovered_products:
-              portfolioRefresh.discovered,
-
-            skipped_products:
-              portfolioRefresh.skipped,
-
-            error:
-              portfolioRefresh.error ??
-              null,
           },
 
           evidence_status:

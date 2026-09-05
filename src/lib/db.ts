@@ -189,6 +189,49 @@ async function createConnection(): Promise<Db> {
 export const NOW_ISO_SQL =
   `to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 
+/**
+ * Safely merges duplicate prospects (same user_id, product_id, and email,
+ * case-insensitive) before a hard uniqueness constraint gets added on top
+ * of this. Keeps the OLDEST row in each duplicate group — it's the one
+ * most likely to have a source_task_id, evidence, and any manual
+ * qualification triage a person already did — and reassigns any
+ * email_sends history from the newer duplicate(s) to it before removing
+ * them, so no send history is lost and no foreign key is ever left
+ * dangling.
+ *
+ * Idempotent: once no duplicate groups remain, this is a fast no-op
+ * (a single query returning zero rows).
+ */
+async function dedupeProspectsByEmail(db: Db): Promise<void> {
+  const groups = await db.execute<{
+    user_id: string;
+    product_id: string | null;
+    ids: string[];
+  }>(`
+    SELECT user_id, product_id, array_agg(id ORDER BY created_at ASC) AS ids
+    FROM prospects
+    WHERE email IS NOT NULL
+    GROUP BY user_id, product_id, lower(email)
+    HAVING COUNT(*) > 1
+  `);
+
+  for (const group of groups.rows) {
+    const [keepId, ...duplicateIds] = group.ids;
+
+    for (const duplicateId of duplicateIds) {
+      await db.execute({
+        sql: `UPDATE email_sends SET prospect_id = ? WHERE prospect_id = ?`,
+        args: [keepId, duplicateId],
+      });
+
+      await db.execute({
+        sql: `DELETE FROM prospects WHERE id = ?`,
+        args: [duplicateId],
+      });
+    }
+  }
+}
+
 async function runMigrations(db: Db): Promise<void> {
   /*
    * The CREATE TABLE statements below represent the current schema.
@@ -416,6 +459,27 @@ async function runMigrations(db: Db): Promise<void> {
   ]);
 
   /*
+   * MILESTONE 3H — Duplicate prospects.
+   *
+   * A duplicate prospect (same user, same product, same email) was
+   * observed in production — the application-level check in
+   * executors/prospecting.ts's isDuplicateProspect() looked correct on
+   * review, but relying solely on app-level logic for a uniqueness
+   * guarantee is inherently fragile against races, retries, and edge
+   * cases. This adds a real database-level constraint as the actual
+   * source of truth.
+   *
+   * IMPORTANT: this can't just be a CREATE UNIQUE INDEX — Postgres
+   * refuses to create one over data that already violates it, which
+   * would break every future deploy for anyone who already has a
+   * duplicate (as this user does). So this first safely MERGES any
+   * existing duplicate groups (keeping the oldest row, reassigning any
+   * email_sends history to it before removing the newer duplicate(s))
+   * and only then adds the constraint. Idempotent and safe to run on
+   * every boot: once there are no duplicate groups left, the dedup step
+   * is a no-op and the index creation is a no-op.
+   */
+  /*
    * Prospect indexes — created AFTER the additive column migrations
    * above, same reasoning as before: existing databases may predate
    * user_id/source_task_id/product_id/email.
@@ -483,6 +547,38 @@ async function runMigrations(db: Db): Promise<void> {
     ],
     "write"
   );
+
+  /*
+   * MILESTONE 3H — Duplicate prospects.
+   *
+   * A duplicate prospect (same user, same product, same email) was
+   * observed in production — the application-level check in
+   * executors/prospecting.ts's isDuplicateProspect() looked correct on
+   * review, but relying solely on app-level logic for a uniqueness
+   * guarantee is inherently fragile against races, retries, and edge
+   * cases. This adds a real database-level constraint as the actual
+   * source of truth.
+   *
+   * IMPORTANT: this can't just be a CREATE UNIQUE INDEX — Postgres
+   * refuses to create one over data that already violates it, which
+   * would break every future deploy for anyone who already has a
+   * duplicate (as this user does). So this first safely MERGES any
+   * existing duplicate groups (keeping the oldest row, reassigning any
+   * email_sends history to it before removing the newer duplicate(s))
+   * and only then adds the constraint. Idempotent and safe to run on
+   * every boot: once there are no duplicate groups left, the dedup step
+   * is a no-op and the index creation is a no-op.
+   *
+   * Must run AFTER email_sends exists (immediately above) — the dedup
+   * step reassigns rows in that table before deleting a duplicate.
+   */
+  await dedupeProspectsByEmail(db);
+
+  await db.execute(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_prospects_unique_email_per_product
+    ON prospects (user_id, product_id, lower(email))
+    WHERE email IS NOT NULL
+  `);
 }
 
 /**

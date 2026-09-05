@@ -8,7 +8,7 @@ import { LOCAL_USER_ID } from "@/lib/localUser";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Action = "approve" | "mark_responded" | "pause" | "resume";
+type Action = "approve" | "mark_responded" | "pause" | "resume" | "unsubscribe";
 
 export async function PATCH(
   req: NextRequest,
@@ -65,6 +65,20 @@ export async function PATCH(
           LOCAL_USER_ID,
           params.id,
           { sequence_status: "responded", next_send_at: null }
+        );
+        return NextResponse.json({ prospect: updated });
+      }
+
+      case "unsubscribe": {
+        // Manual fallback for anyone who received an email with a broken
+        // unsubscribe link (e.g. from the APP_BASE_URL misconfiguration
+        // that shipped a localhost link) or who asked to be removed some
+        // other way (a reply, a phone call, etc.) rather than clicking
+        // the link themselves.
+        const updated = await updateProspectSequence(
+          LOCAL_USER_ID,
+          params.id,
+          { sequence_status: "unsubscribed", next_send_at: null }
         );
         return NextResponse.json({ prospect: updated });
       }

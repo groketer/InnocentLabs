@@ -197,6 +197,18 @@ export function FollowUpsContent() {
                     Resume
                   </button>
                 )}
+                {["active", "pending_approval", "paused"].includes(
+                  s.sequence_status
+                ) && (
+                  <button
+                    disabled={busyId === s.id}
+                    onClick={() => act(s.id, "unsubscribe")}
+                    className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-red-500/40 hover:text-red-300 disabled:opacity-40"
+                    title="For anyone who couldn't use the link in their email — e.g. asked by reply or phone"
+                  >
+                    Unsubscribe manually
+                  </button>
+                )}
               </div>
             </div>
           ))

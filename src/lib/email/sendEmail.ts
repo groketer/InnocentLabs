@@ -52,6 +52,20 @@ function unsubscribeUrl(token: string): string {
     );
   }
 
+  // This exact misconfiguration shipped real emails with a
+  // http://localhost:3000/unsubscribe/... link — completely unreachable
+  // for the recipient, and a real compliance problem, not just a cosmetic
+  // one. If we're genuinely running on Vercel (not local dev) and
+  // APP_BASE_URL still points at localhost/127.0.0.1, that's someone's
+  // local-dev value left in production by mistake — refuse to send rather
+  // than repeat the mistake silently.
+  if (process.env.VERCEL && /^https?:\/\/(localhost|127\.0\.0\.1)/i.test(base)) {
+    throw new Error(
+      `APP_BASE_URL is set to "${base}", which is a local-dev address, but this is running on Vercel. ` +
+        `Set APP_BASE_URL to your real deployed URL (e.g. https://your-app.vercel.app) in Vercel's environment variables.`
+    );
+  }
+
   return `${base}/unsubscribe/${token}`;
 }
 

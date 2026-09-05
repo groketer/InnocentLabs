@@ -218,6 +218,16 @@ export const AUTHORITATIVE_PORTFOLIO: Array<{
       "A masterclass focused on LinkedIn growth and marketing.",
     status: "active",
   },
+
+  {
+    name: "Patterns of Opportunity",
+    url: "https://books.prfed.com/patterns/",
+    asset_type: "product",
+    category: "book / business strategy",
+    description:
+      "\"Patterns of Opportunity: Seeing What Others Overlook\" — a book by Innocent Mwangi. Available on Amazon in Kindle (https://www.amazon.com/dp/B0HGVNBNBX) and paperback (https://www.amazon.com/dp/B0HH8MP9MB) editions.",
+    status: "active",
+  },
 ];
 
 /**

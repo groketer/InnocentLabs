@@ -24,7 +24,9 @@ export function FollowUpsContent() {
     null
   );
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [runningNow, setRunningNow] = useState(false);
 
   async function load() {
     try {
@@ -62,15 +64,55 @@ export function FollowUpsContent() {
     }
   }
 
+  async function runNow() {
+    setRunningNow(true);
+    setNotice(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/followups/run-now", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not run outreach now.");
+      setNotice(
+        "Outreach run triggered — check back in a few seconds for updates."
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not run outreach now.");
+    } finally {
+      setRunningNow(false);
+    }
+  }
+
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
-      <h1 className="text-lg font-semibold text-white">Follow-ups</h1>
-      <p className="mt-1 text-xs text-white/40">
-        Outreach sequences in progress. Replies can&apos;t be detected
-        automatically — mark someone &quot;Responded&quot; here once you see
-        their reply in your own inbox, and their sequence stops.
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-white">Follow-ups</h1>
+          <p className="mt-1 text-xs text-white/40">
+            Outreach sequences in progress. Replies can&apos;t be detected
+            automatically — mark someone &quot;Responded&quot; here once you see
+            their reply in your own inbox, and their sequence stops.
+          </p>
+        </div>
+        <button
+          onClick={runNow}
+          disabled={runningNow}
+          className="shrink-0 rounded-md border border-emerald-500/40 px-3 py-2 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
+        >
+          {runningNow ? "Running…" : "Run outreach now"}
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-white/30">
+        On Vercel, outreach normally only runs once a day automatically.
+        Use this to send right away instead of waiting — useful right after
+        qualifying someone new.
       </p>
 
+      {notice && (
+        <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          {notice}
+        </div>
+      )}
       {error && (
         <div className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}

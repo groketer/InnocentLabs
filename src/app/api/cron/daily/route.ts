@@ -3,6 +3,7 @@ import { ensureDailyPortfolioRefresh } from "@/lib/taskEngine/portfolioScheduler
 import { ensureDailyProspectingTask } from "@/lib/taskEngine/prospectingScheduler";
 import { ensureDailyEmailCampaignTask } from "@/lib/taskEngine/emailCampaignScheduler";
 import { tick } from "@/lib/taskEngine/engine";
+import { listActiveTopLevelTasks } from "@/lib/models/tasks";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,13 +23,14 @@ export const dynamic = "force-dynamic";
  *    per day with no product specified, letting the executor pick one on
  *    its own. This is what makes prospecting proactive instead of only
  *    ever running when a person manually starts it.
- * 3. tick() — one safety tick, so that task (and any other still-active
- *    task) gets a chance to make progress even if nobody has the app
- *    open in a browser tab that day. On Hobby this is the ONLY
- *    guaranteed engine progress on days nobody visits the app; the rest
- *    of the time, progress comes from the client-side EngineTicker
- *    (src/components/EngineTicker.tsx) polling /api/tasks/tick while the
- *    app is open.
+ * 3. Repeatedly tick() until nothing's left to do or the time budget runs
+ *    out — NOT just once. A single tick() only advances the task queue by
+ *    one step (e.g. "claim this task and plan its subtasks"), so calling
+ *    it once would create today's tasks and then stop with almost nothing
+ *    actually done. On a day nobody opens the app at all, this loop is
+ *    the ONLY thing that will ever make real progress — the client-side
+ *    EngineTicker (src/components/EngineTicker.tsx) only ticks while a
+ *    browser tab is open and visible.
  *
  * Auth: Vercel signs cron requests with a bearer token matching the
  * CRON_SECRET environment variable when one is set — see
@@ -36,6 +38,13 @@ export const dynamic = "force-dynamic";
  * If CRON_SECRET isn't set (e.g. local dev), the check is skipped so this
  * route can still be hit manually while testing.
  */
+const TICK_LOOP_BUDGET_MS = 45_000;
+const TICK_LOOP_DELAY_MS = 2_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function GET(req: NextRequest) {
   const expectedSecret = process.env.CRON_SECRET;
 
@@ -51,9 +60,28 @@ export async function GET(req: NextRequest) {
     await ensureDailyPortfolioRefresh();
     await ensureDailyProspectingTask();
     await ensureDailyEmailCampaignTask();
-    await tick();
 
-    return NextResponse.json({ ok: true, ranAt: new Date().toISOString() });
+    const deadline = Date.now() + TICK_LOOP_BUDGET_MS;
+    let ticks = 0;
+
+    while (Date.now() < deadline) {
+      await tick();
+      ticks++;
+
+      const stillActive = await listActiveTopLevelTasks();
+      if (stillActive.length === 0) break;
+
+      // See the matching comment in /api/followups/run-now — without a
+      // delay this becomes a tight loop hammering the database thousands
+      // of times in one request.
+      await sleep(TICK_LOOP_DELAY_MS);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      ranAt: new Date().toISOString(),
+      ticks,
+    });
   } catch (error) {
     console.error("[api/cron/daily] failed:", error);
     return NextResponse.json({ error: "Daily cron run failed." }, { status: 500 });

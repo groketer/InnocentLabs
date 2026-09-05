@@ -1026,13 +1026,23 @@ export async function updateProspect(
  * either they haven't started one yet (and are qualified), or they're
  * active and their next scheduled send is due.
  *
- * Deliberately does NOT include pending_approval, unsubscribed, responded,
- * paused, or completed — those are all terminal or waiting on something
- * other than time.
+ * includePendingApproval: when Settings' require_manual_approval is
+ * currently OFF, a prospect stuck in "pending_approval" from an earlier
+ * run (back when approval WAS required) should become eligible again on
+ * its own — the gate that put them there no longer applies. Without this,
+ * turning approval off would silently do nothing for anyone already
+ * caught by it; they'd stay stuck until manually approved one at a time.
+ * The caller (executors/emailCampaign.ts) decides this based on the
+ * current setting value.
+ *
+ * Still never includes unsubscribed, responded, paused, or completed —
+ * those are genuinely terminal or waiting on a person's action, not on
+ * settings or time.
  */
 export async function listProspectsDueForOutreach(
   userId: string,
-  limit: number
+  limit: number,
+  includePendingApproval = false
 ): Promise<Prospect[]> {
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) return [];
@@ -1050,6 +1060,7 @@ export async function listProspectsDueForOutreach(
         AND (
           sequence_status = 'not_started'
           OR (sequence_status = 'active' AND next_send_at IS NOT NULL AND next_send_at <= @now)
+          OR (@include_pending_approval AND sequence_status = 'pending_approval')
         )
       ORDER BY
         CASE WHEN sequence_status = 'active' THEN 0 ELSE 1 END,
@@ -1061,6 +1072,7 @@ export async function listProspectsDueForOutreach(
       user_id: normalizedUserId,
       now: nowIso,
       limit: Math.min(Math.max(Math.floor(limit), 1), 200),
+      include_pending_approval: includePendingApproval,
     },
   });
 

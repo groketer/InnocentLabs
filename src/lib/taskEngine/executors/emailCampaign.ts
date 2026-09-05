@@ -56,7 +56,8 @@ export const emailCampaignExecutor: TaskExecutor = {
 
     const due = await listProspectsDueForOutreach(
       task.user_id,
-      Math.min(remainingBudget, MAX_BATCH_PER_TASK)
+      Math.min(remainingBudget, MAX_BATCH_PER_TASK),
+      !settings.require_manual_approval
     );
 
     return due.map((prospect) => ({
@@ -91,21 +92,28 @@ export const emailCampaignExecutor: TaskExecutor = {
       };
     }
 
+    const settings = await getSettings();
+
     // Re-check state in case it changed between planning and now (e.g. a
-    // person unsubscribed/marked them responded via the Follow-ups view
-    // in the meantime).
-    if (
-      !["not_started", "active"].includes(prospect.sequence_status) ||
-      !prospect.email
-    ) {
+    // person unsubscribed/marked them responded via the Follow-ups view in
+    // the meantime). A prospect sitting in "pending_approval" is let
+    // through here ONLY if approval is no longer required — that's what
+    // lets someone stuck there from an earlier run resume automatically
+    // once the setting is turned off, instead of staying stuck until
+    // manually approved one at a time.
+    const isEligibleStatus =
+      prospect.sequence_status === "not_started" ||
+      prospect.sequence_status === "active" ||
+      (prospect.sequence_status === "pending_approval" &&
+        !settings.require_manual_approval);
+
+    if (!isEligibleStatus || !prospect.email) {
       return {
         success: true,
         summary: `Skipped — sequence is now "${prospect.sequence_status}".`,
         resultData: { skipped: true, reason: prospect.sequence_status },
       };
     }
-
-    const settings = await getSettings();
 
     if (prospect.emails_sent > settings.max_follow_ups) {
       await updateProspectSequence(parent.user_id, prospect.id, {
@@ -118,9 +126,11 @@ export const emailCampaignExecutor: TaskExecutor = {
       };
     }
 
-    // Approval gate: only applies to the FIRST email in a sequence. Once a
-    // sequence is active, follow-ups continue on schedule without asking
-    // again each time — the person already approved starting it.
+    // Approval gate: only applies to the FIRST email in a sequence, and
+    // only to a prospect who hasn't been gated before ("not_started" —
+    // anyone already in "pending_approval" only reached this line because
+    // isEligibleStatus above already confirmed approval is now off, so
+    // this deliberately does not re-gate them).
     if (
       prospect.sequence_status === "not_started" &&
       settings.require_manual_approval

@@ -220,13 +220,15 @@ export const AUTHORITATIVE_PORTFOLIO: Array<{
   },
 
   {
-    name: "Patterns of Opportunity",
+    name: "Patterns of Opportunity: Seeing What Others Overlook",
     url: "https://books.prfed.com/patterns/",
     asset_type: "product",
     category: "book / business strategy",
     description:
-      "\"Patterns of Opportunity: Seeing What Others Overlook\" — a book by Innocent Mwangi. Available on Amazon in Kindle (https://www.amazon.com/dp/B0HGVNBNBX) and paperback (https://www.amazon.com/dp/B0HH8MP9MB) editions.",
+      "A book by Innocent Mwangi. Available on Amazon in Kindle (https://www.amazon.com/dp/B0HGVNBNBX) and paperback (https://www.amazon.com/dp/B0HH8MP9MB) editions.",
     status: "active",
+    notes:
+      "IMPORTANT: always use the full title \"Patterns of Opportunity: Seeing What Others Overlook\" when referring to this book, never the shortened \"Patterns of Opportunity\" — a different, more widely known book (by Hunter) shares that shortened title, and abbreviating risks promoting the wrong book.",
   },
 ];
 

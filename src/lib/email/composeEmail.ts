@@ -52,6 +52,15 @@ email back to yourself before finalizing it. A grammar or punctuation
 error undermines a professional cold email more than almost anything else
 about it — treat this as a hard requirement, not a stylistic preference.
 
+PRODUCT NAME:
+Always refer to the product using its exact full name as given below —
+never shorten, abbreviate, or paraphrase it, even where a shorter version
+would read more naturally. Some product names are deliberately specific
+(e.g. a full book title) precisely to avoid being confused with a
+different, unrelated product that happens to share a shorter or similar
+name. Using anything other than the exact given name risks promoting the
+wrong thing.
+
 FOLLOW-UPS:
 If this is a follow-up (step > 0), keep it brief, reference that you wrote
 before without repeating it verbatim, and add ONE new, small, genuine reason

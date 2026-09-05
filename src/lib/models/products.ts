@@ -682,3 +682,46 @@ export async function upsertDiscoveredPortfolioProduct(input: {
 
   return product;
 }
+
+/**
+ * Updates a product's free-text notes only.
+ *
+ * Deliberately narrow: everything else on a product (description, problem,
+ * audience, positioning, evidence, confidence, etc.) is derived from
+ * website audits or the live marketplace refresh, not something a person
+ * should overwrite by hand from the Products view. Notes are the one field
+ * meant for a human's own commentary/strategy thinking alongside the
+ * agent-derived intelligence.
+ */
+export async function updateProductNotes(
+  id: string,
+  notes: string
+): Promise<Product> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      UPDATE products
+      SET notes = @notes, updated_at = ${NOW_ISO_SQL}
+      WHERE id = @id
+    `,
+    args: { id, notes },
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Product not found.");
+  }
+
+  const result2 = await db.execute({
+    sql: `SELECT * FROM products WHERE id = ?`,
+    args: [id],
+  });
+
+  const product = result2.rows[0] as unknown as Product | undefined;
+
+  if (!product) {
+    throw new Error("Product was updated but could not be retrieved afterward.");
+  }
+
+  return product;
+}

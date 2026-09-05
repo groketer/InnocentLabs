@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 interface NavItem {
   label: string;
@@ -14,13 +14,20 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Intelligence", href: "/intelligence", enabled: true },
   { label: "Prospects", href: "/prospects", enabled: true },
   { label: "Follow-ups", href: "/follow-ups", enabled: true },
-  { label: "Products", href: "/products", enabled: false },
+  { label: "Products", href: "/products", enabled: true },
   { label: "Activity", href: "/activity", enabled: true },
   { label: "Settings", href: "/settings", enabled: true },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <aside className="flex h-full w-60 shrink-0 flex-col border-r border-ink-700 bg-ink-900">
@@ -74,7 +81,12 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-ink-700 px-5 py-4">
-        <p className="text-xs text-white/30">Milestone 1 — Foundation</p>
+        <button
+          onClick={logout}
+          className="text-xs text-white/30 transition-colors hover:text-white/60"
+        >
+          Log out
+        </button>
       </div>
     </aside>
   );

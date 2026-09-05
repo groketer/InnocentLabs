@@ -91,6 +91,15 @@ function getTransporter() {
   return cachedTransporter;
 }
 
+function bccRecipients(): string[] {
+  const raw = process.env.BCC_NOTIFICATION_EMAILS;
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((addr) => addr.trim())
+    .filter(Boolean);
+}
+
 export async function sendEmail(
   input: SendEmailInput
 ): Promise<SendEmailResult> {
@@ -116,11 +125,13 @@ export async function sendEmail(
   }
 
   const fromName = process.env.SMTP_FROM_NAME?.trim() || "Innocent Labs";
+  const bcc = bccRecipients();
 
   try {
     await getTransporter().sendMail({
       from: `"${fromName}" <${process.env.SMTP_USER}>`,
       to: input.to,
+      ...(bcc.length > 0 ? { bcc } : {}),
       subject: input.subject,
       text: finalBody,
     });

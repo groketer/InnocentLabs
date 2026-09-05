@@ -105,7 +105,8 @@ export function ProspectsContent() {
       <h1 className="text-lg font-semibold text-white">Prospects</h1>
       <p className="mt-1 text-xs text-white/40">
         People and organizations discovered through research, with the
-        evidence behind each one.
+        evidence behind each one. Marking someone &quot;Qualified&quot;
+        starts an email outreach sequence for them — see Follow-ups.
       </p>
 
       <div className="mt-4 flex flex-wrap gap-2">

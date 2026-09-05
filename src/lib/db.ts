@@ -405,6 +405,14 @@ async function runMigrations(db: Db): Promise<void> {
     ["source_task_id", "TEXT"],
     ["email", "TEXT"],
     ["product_id", "TEXT"],
+    // MILESTONE 3F — Follow-up campaigns.
+    // sequence_status: not_started | pending_approval | active | completed
+    //                  | unsubscribed | responded | paused
+    ["sequence_status", "TEXT NOT NULL DEFAULT 'not_started'"],
+    ["emails_sent", "INTEGER NOT NULL DEFAULT 0"],
+    ["last_sent_at", "TEXT"],
+    ["next_send_at", "TEXT"],
+    ["unsubscribe_token", "TEXT"],
   ]);
 
   /*
@@ -423,6 +431,55 @@ async function runMigrations(db: Db): Promise<void> {
       { sql: `CREATE INDEX IF NOT EXISTS idx_prospects_product ON prospects(product_id)` },
       { sql: `CREATE INDEX IF NOT EXISTS idx_prospects_email ON prospects(email)` },
       { sql: `CREATE INDEX IF NOT EXISTS idx_prospects_created ON prospects(created_at)` },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_prospects_sequence_status
+          ON prospects(sequence_status)`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_prospects_next_send
+          ON prospects(next_send_at)`,
+      },
+      {
+        sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_prospects_unsubscribe_token
+          ON prospects(unsubscribe_token)`,
+      },
+    ],
+    "write"
+  );
+
+  /*
+   * -------------------------------------------------------------------
+   * MILESTONE 3F — Follow-up campaigns: outbound send audit trail.
+   * -------------------------------------------------------------------
+   *
+   * One row per actually-sent (or attempted) email. This is what the
+   * Follow-ups view shows as history, and what a future round composing
+   * a follow-up can look back on to avoid repeating itself.
+   */
+  await db.batch(
+    [
+      {
+        sql: `CREATE TABLE IF NOT EXISTS email_sends (
+          id           TEXT PRIMARY KEY,
+          user_id      TEXT NOT NULL,
+          prospect_id  TEXT NOT NULL REFERENCES prospects(id),
+          task_id      TEXT REFERENCES agent_tasks(id),
+          step         INTEGER NOT NULL,
+          subject      TEXT NOT NULL,
+          body         TEXT NOT NULL,
+          status       TEXT NOT NULL,
+          error_message TEXT,
+          sent_at      TEXT NOT NULL DEFAULT (${NOW_ISO_SQL})
+        )`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_email_sends_prospect
+          ON email_sends(prospect_id)`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_email_sends_user
+          ON email_sends(user_id)`,
+      },
     ],
     "write"
   );

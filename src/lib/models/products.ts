@@ -434,6 +434,21 @@ export async function getProductByName(
   return product ?? null;
 }
 
+export async function getProductById(
+  id: string
+): Promise<Product | null> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `SELECT * FROM products WHERE id = ?`,
+    args: [id],
+  });
+
+  const product = result.rows[0] as unknown as Product | undefined;
+
+  return product ?? null;
+}
+
 /**
  * Returns products explicitly eligible for autonomous work.
  */

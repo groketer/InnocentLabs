@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureDailyPortfolioRefresh } from "@/lib/taskEngine/portfolioScheduler";
 import { ensureDailyProspectingTask } from "@/lib/taskEngine/prospectingScheduler";
+import { ensureDailyEmailCampaignTask } from "@/lib/taskEngine/emailCampaignScheduler";
 import { tick } from "@/lib/taskEngine/engine";
 
 export const runtime = "nodejs";
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
   try {
     await ensureDailyPortfolioRefresh();
     await ensureDailyProspectingTask();
+    await ensureDailyEmailCampaignTask();
     await tick();
 
     return NextResponse.json({ ok: true, ranAt: new Date().toISOString() });

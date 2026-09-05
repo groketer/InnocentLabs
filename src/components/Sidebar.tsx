@@ -13,10 +13,10 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/", enabled: true },
   { label: "Intelligence", href: "/intelligence", enabled: true },
   { label: "Prospects", href: "/prospects", enabled: true },
-  { label: "Follow-ups", href: "/follow-ups", enabled: false },
+  { label: "Follow-ups", href: "/follow-ups", enabled: true },
   { label: "Products", href: "/products", enabled: false },
   { label: "Activity", href: "/activity", enabled: true },
-  { label: "Settings", href: "/settings", enabled: false },
+  { label: "Settings", href: "/settings", enabled: true },
 ];
 
 export function Sidebar() {

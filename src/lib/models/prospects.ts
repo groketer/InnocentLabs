@@ -90,6 +90,32 @@ export interface Prospect {
   confidence?: number;
   unknowns: string[];
 
+  /**
+   * MILESTONE 3F — Follow-up campaigns.
+   *
+   * sequence_status starts "not_started" and moves forward as outreach
+   * progresses. "pending_approval" only happens when Settings'
+   * require_manual_approval is on; otherwise a sequence goes straight to
+   * "active" once its first email sends.
+   */
+  sequence_status:
+    | "not_started"
+    | "pending_approval"
+    | "active"
+    | "completed"
+    | "unsubscribed"
+    | "responded"
+    | "paused";
+  emails_sent: number;
+  last_sent_at?: string;
+  next_send_at?: string;
+  /**
+   * Used to build this prospect's one-click unsubscribe link. Generated
+   * once, the first time a sequence starts — never guessable, never
+   * derived from anything public about the prospect.
+   */
+  unsubscribe_token?: string;
+
   created_at: string;
   updated_at: string;
 }
@@ -457,6 +483,26 @@ function mapProspectRow(
         : undefined,
 
     unknowns,
+
+    sequence_status:
+      typeof row.sequence_status === "string"
+        ? (row.sequence_status as Prospect["sequence_status"])
+        : "not_started",
+
+    emails_sent:
+      row.emails_sent === null ||
+      row.emails_sent === undefined
+        ? 0
+        : Number(row.emails_sent),
+
+    last_sent_at:
+      optionalString(row.last_sent_at),
+
+    next_send_at:
+      optionalString(row.next_send_at),
+
+    unsubscribe_token:
+      optionalString(row.unsubscribe_token, 200),
 
     created_at:
       String(row.created_at),
@@ -969,4 +1015,192 @@ export async function updateProspect(
   }
 
   return updated;
+}
+
+/* -------------------------------------------------------------------------- */
+/* MILESTONE 3F — Follow-up campaigns                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Prospects eligible to receive the next email in their sequence right now:
+ * either they haven't started one yet (and are qualified), or they're
+ * active and their next scheduled send is due.
+ *
+ * Deliberately does NOT include pending_approval, unsubscribed, responded,
+ * paused, or completed — those are all terminal or waiting on something
+ * other than time.
+ */
+export async function listProspectsDueForOutreach(
+  userId: string,
+  limit: number
+): Promise<Prospect[]> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) return [];
+
+  const db = await getDb();
+  const nowIso = new Date().toISOString();
+
+  const result = await db.execute({
+    sql: `
+      SELECT *
+      FROM prospects
+      WHERE user_id = @user_id
+        AND qualification_status = 'qualified'
+        AND email IS NOT NULL
+        AND (
+          sequence_status = 'not_started'
+          OR (sequence_status = 'active' AND next_send_at IS NOT NULL AND next_send_at <= @now)
+        )
+      ORDER BY
+        CASE WHEN sequence_status = 'active' THEN 0 ELSE 1 END,
+        next_send_at ASC NULLS FIRST,
+        created_at ASC
+      LIMIT @limit
+    `,
+    args: {
+      user_id: normalizedUserId,
+      now: nowIso,
+      limit: Math.min(Math.max(Math.floor(limit), 1), 200),
+    },
+  });
+
+  return (result.rows as unknown as Array<Record<string, unknown>>).map(
+    mapProspectRow
+  );
+}
+
+/**
+ * Narrow update for the sequence-tracking fields only. Deliberately
+ * separate from updateProspect() (qualification triage) and createProspect
+ * (research-derived fields) — this is the one place sending state changes.
+ */
+export async function updateProspectSequence(
+  userId: string,
+  id: string,
+  fields: {
+    sequence_status?: Prospect["sequence_status"];
+    emails_sent?: number;
+    last_sent_at?: string | null;
+    next_send_at?: string | null;
+    unsubscribe_token?: string;
+  }
+): Promise<Prospect> {
+  const normalizedUserId = userId.trim();
+  const normalizedId = id.trim();
+
+  if (!normalizedUserId || !normalizedId) {
+    throw new Error("A user and prospect id are required.");
+  }
+
+  const entries = Object.entries(fields).filter(
+    ([, v]) => v !== undefined
+  );
+
+  if (entries.length === 0) {
+    const current = await getProspectById(normalizedUserId, normalizedId);
+    if (!current) throw new Error("Prospect not found.");
+    return current;
+  }
+
+  const db = await getDb();
+
+  const setClause = entries
+    .map(([key]) => `${key} = @${key}`)
+    .join(", ");
+
+  const args: Record<string, unknown> = {
+    id: normalizedId,
+    user_id: normalizedUserId,
+    updated_at: new Date().toISOString(),
+  };
+
+  for (const [key, value] of entries) {
+    args[key] = value;
+  }
+
+  const result = await db.execute({
+    sql: `
+      UPDATE prospects
+      SET ${setClause}, updated_at = @updated_at
+      WHERE id = @id AND user_id = @user_id
+    `,
+    args,
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Prospect not found.");
+  }
+
+  const updated = await getProspectById(normalizedUserId, normalizedId);
+  if (!updated) {
+    throw new Error("Prospect was updated but could not be retrieved afterward.");
+  }
+
+  return updated;
+}
+
+/**
+ * Public lookup by unsubscribe token — deliberately NOT scoped to a
+ * user_id, since the person clicking an unsubscribe link in their inbox
+ * isn't authenticated into this app at all. The token itself (random,
+ * generated once, never derived from anything guessable) is what proves
+ * this is the right prospect.
+ */
+export async function getProspectByUnsubscribeToken(
+  token: string
+): Promise<Prospect | null> {
+  const normalizedToken = token.trim();
+  if (!normalizedToken) return null;
+
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `SELECT * FROM prospects WHERE unsubscribe_token = ? LIMIT 1`,
+    args: [normalizedToken],
+  });
+
+  const row = result.rows[0] as unknown as
+    | Record<string, unknown>
+    | undefined;
+
+  return row ? mapProspectRow(row) : null;
+}
+
+/**
+ * Every currently-active or pending-approval sequence, for the Follow-ups
+ * view.
+ */
+export async function listActiveSequences(
+  userId: string
+): Promise<Prospect[]> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) return [];
+
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      SELECT *
+      FROM prospects
+      WHERE user_id = @user_id
+        AND sequence_status IN ('pending_approval', 'active', 'completed', 'responded', 'unsubscribed', 'paused')
+      ORDER BY
+        CASE sequence_status
+          WHEN 'pending_approval' THEN 0
+          WHEN 'active' THEN 1
+          WHEN 'paused' THEN 2
+          WHEN 'responded' THEN 3
+          WHEN 'completed' THEN 4
+          WHEN 'unsubscribed' THEN 5
+          ELSE 6
+        END,
+        updated_at DESC
+      LIMIT 200
+    `,
+    args: { user_id: normalizedUserId },
+  });
+
+  return (result.rows as unknown as Array<Record<string, unknown>>).map(
+    mapProspectRow
+  );
 }

@@ -35,6 +35,7 @@
 
 import { startPortfolioScheduler } from "./portfolioScheduler";
 import { startProspectingScheduler } from "./prospectingScheduler";
+import { startEmailCampaignScheduler } from "./emailCampaignScheduler";
 import {
   listActiveTopLevelTasks,
   listSubtasks,
@@ -660,6 +661,7 @@ export function startEngine(): void {
 
   startPortfolioScheduler();
   startProspectingScheduler();
+  startEmailCampaignScheduler();
 
   recoverInterruptedTasks().catch((err) =>
     console.error("[taskEngine] recoverInterruptedTasks() threw:", err)

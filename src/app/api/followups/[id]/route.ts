@@ -42,10 +42,20 @@ export async function PATCH(
             { status: 400 }
           );
         }
+        // IMPORTANT: setting this back to "not_started" would have it
+        // immediately re-caught by the exact same
+        // require_manual_approval check next time the outreach task runs
+        // — an approval that never actually approves anything. "active"
+        // (with emails_sent still 0, so this is still genuinely their
+        // first email) skips that check entirely, since the gate only
+        // ever applies to "not_started".
         const updated = await updateProspectSequence(
           LOCAL_USER_ID,
           params.id,
-          { sequence_status: "not_started" }
+          {
+            sequence_status: "active",
+            next_send_at: new Date().toISOString(),
+          }
         );
         return NextResponse.json({ prospect: updated });
       }

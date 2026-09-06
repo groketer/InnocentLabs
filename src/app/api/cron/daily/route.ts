@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureDailyPortfolioRefresh } from "@/lib/taskEngine/portfolioScheduler";
 import { ensureDailyProspectingTask } from "@/lib/taskEngine/prospectingScheduler";
 import { ensureDailyEmailCampaignTask } from "@/lib/taskEngine/emailCampaignScheduler";
+import { ensureDailyAuditTask } from "@/lib/taskEngine/auditScheduler";
 import { tick } from "@/lib/taskEngine/engine";
 import { listActiveTopLevelTasks } from "@/lib/models/tasks";
 
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest) {
 
   try {
     await ensureDailyPortfolioRefresh();
+    await ensureDailyAuditTask();
     await ensureDailyProspectingTask();
     await ensureDailyEmailCampaignTask();
 

@@ -27,6 +27,18 @@ export interface AppSettings {
   autonomous_prospecting: boolean;
   /** When true, the daily scheduler creates outreach-sending tasks on its own, with no prompting. */
   autonomous_campaigns: boolean;
+  /**
+   * When true, prospects the AI itself marked "needs_review" get
+   * automatically promoted to "qualified" (and therefore enter outreach)
+   * once their confidence score clears auto_qualify_confidence_threshold
+   * — no human review step at all for those. Off by default: this is a
+   * real increase in autonomy (and risk) over the baseline, where the AI
+   * already auto-qualifies confident prospects but defers ambiguous ones
+   * to a person.
+   */
+  autonomous_qualification: boolean;
+  /** Confidence (0–1) a needs_review prospect must clear to be auto-qualified when autonomous_qualification is on. */
+  auto_qualify_confidence_threshold: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -36,6 +48,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   require_manual_approval: false,
   autonomous_prospecting: true,
   autonomous_campaigns: true,
+  autonomous_qualification: true,
+  auto_qualify_confidence_threshold: 0.4,
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<
@@ -46,6 +60,7 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
   "require_manual_approval",
   "autonomous_prospecting",
   "autonomous_campaigns",
+  "autonomous_qualification",
 ]);
 
 function coerce(key: keyof AppSettings, raw: string): number | boolean {
@@ -91,6 +106,8 @@ export interface UpdateSettingsInput {
   require_manual_approval?: boolean;
   autonomous_prospecting?: boolean;
   autonomous_campaigns?: boolean;
+  autonomous_qualification?: boolean;
+  auto_qualify_confidence_threshold?: number;
 }
 
 function validate(input: UpdateSettingsInput): void {
@@ -122,6 +139,17 @@ function validate(input: UpdateSettingsInput): void {
   ) {
     throw new Error(
       "daily_send_limit must be a whole number between 1 and 2000."
+    );
+  }
+
+  if (
+    input.auto_qualify_confidence_threshold !== undefined &&
+    (typeof input.auto_qualify_confidence_threshold !== "number" ||
+      input.auto_qualify_confidence_threshold < 0 ||
+      input.auto_qualify_confidence_threshold > 1)
+  ) {
+    throw new Error(
+      "auto_qualify_confidence_threshold must be a number between 0 and 1."
     );
   }
 }

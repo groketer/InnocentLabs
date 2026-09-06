@@ -31,6 +31,6 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api/cron|api/auth|unsubscribe|login|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api/cron|api/auth|api/tasks/tick|unsubscribe|login|_next/static|_next/image|favicon.ico).*)",
   ],
 };

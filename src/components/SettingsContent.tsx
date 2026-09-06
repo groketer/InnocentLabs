@@ -147,6 +147,50 @@ export function SettingsContent() {
             Autonomous outreach — send due emails on its own, daily
           </span>
         </label>
+
+        <label className="mt-3 flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={settings.autonomous_qualification}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                autonomous_qualification: e.target.checked,
+              })
+            }
+            className="h-4 w-4 rounded border-ink-600 bg-ink-800"
+          />
+          <span className="text-sm text-white/70">
+            Autonomous qualification — auto-promote &quot;Needs review&quot;
+            prospects to Qualified once confident enough, with no review
+          </span>
+        </label>
+
+        {settings.autonomous_qualification && (
+          <label className="mt-3 ml-6 block max-w-xs">
+            <span className="text-xs text-white/50">
+              Confidence threshold ({Math.round(settings.auto_qualify_confidence_threshold * 100)}%)
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={settings.auto_qualify_confidence_threshold}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  auto_qualify_confidence_threshold: Number(e.target.value),
+                })
+              }
+              className="mt-1 w-full"
+            />
+            <span className="mt-1 block text-xs text-white/30">
+              Lower = more autonomous, more prospects auto-qualified. Higher
+              = more conservative.
+            </span>
+          </label>
+        )}
       </div>
 
       <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">

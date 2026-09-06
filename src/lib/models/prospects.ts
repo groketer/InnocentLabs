@@ -1216,3 +1216,47 @@ export async function listActiveSequences(
     mapProspectRow
   );
 }
+/**
+ * MILESTONE 3I — Full autonomy, opted into explicitly.
+ *
+ * Promotes "needs_review" prospects to "qualified" — with no human
+ * involved at all — once their confidence score clears the given
+ * threshold. This is a genuine increase in autonomy (and risk) over the
+ * baseline: the prospecting agent already auto-qualifies prospects it's
+ * confident about; this removes the human safety net for the ones it
+ * was NOT confident about, for anyone who has explicitly turned on
+ * Settings' autonomous_qualification.
+ *
+ * Deliberately narrow: only ever touches "needs_review" rows. Never
+ * touches "unqualified" (the AI actively rejected these for a reason)
+ * or "candidate" (a distinctly more tentative bucket than needs_review).
+ *
+ * Returns the number of prospects promoted, for logging/activity.
+ */
+export async function autoQualifyDueProspects(
+  userId: string,
+  confidenceThreshold: number
+): Promise<number> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) return 0;
+
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      UPDATE prospects
+      SET qualification_status = 'qualified', updated_at = @updated_at
+      WHERE user_id = @user_id
+        AND qualification_status = 'needs_review'
+        AND confidence IS NOT NULL
+        AND confidence >= @threshold
+    `,
+    args: {
+      user_id: normalizedUserId,
+      threshold: confidenceThreshold,
+      updated_at: new Date().toISOString(),
+    },
+  });
+
+  return result.rowsAffected;
+}

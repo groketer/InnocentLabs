@@ -780,6 +780,15 @@ function buildProductContext(
     return "";
   }
 
+  const richFields = [
+    product.problem,
+    product.audience,
+    product.positioning,
+    product.features,
+  ];
+  const knownFieldCount = richFields.filter(Boolean).length;
+  const isThin = knownFieldCount <= 1;
+
   return `
 TARGET INNOCENT LABS PRODUCT
 
@@ -801,7 +810,22 @@ IMPORTANT:
 Empty or unknown fields above are genuinely unknown.
 
 Do not fill them with assumptions.
-`;
+${
+  isThin && product.url
+    ? `
+THIS PRODUCT'S STORED INTELLIGENCE IS THIN:
+
+Most of the fields above are unknown — this product has not yet been
+through a full audit. Before searching for prospects, use your web search
+tool to actually visit ${product.url} yourself and read what it says.
+Ground your prospecting in what you genuinely observe there (who it's
+for, what problem it solves, how it's positioned) rather than guessing
+from the name alone. Treat anything you learn this way as a direct
+observation with ${product.url} as its source, exactly like any other
+evidence — do not present it as if it came from the stored product
+record above.`
+    : ""
+}`;
 }
 
 /* -------------------------------------------------------------------------- */

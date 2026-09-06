@@ -12,6 +12,7 @@
   "dependencies": {
     "@neondatabase/serverless": "^0.10.4",
     "@openai/agents": "^0.17.0",
+    "@upstash/qstash": "^2.7.20",
     "next": "^14.2.15",
     "nodemailer": "^6.9.16",
     "openai": "^7.2.0",

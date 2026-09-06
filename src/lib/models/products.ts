@@ -480,6 +480,56 @@ export async function listUnauditedProducts(): Promise<Product[]> {
 }
 
 /**
+ * MILESTONE 3I — autonomous auditing.
+ *
+ * Returns the single product most in need of a fresh audit: never-audited
+ * products first (oldest-created among those, for determinism), then
+ * whichever audited product has gone longest without a re-audit. Used by
+ * the autonomous audit scheduler to work through the whole portfolio
+ * gradually, one product per day, rather than either leaving products
+ * with thin/no intelligence indefinitely or re-auditing everything at
+ * once (wasteful — most products' intelligence doesn't change day to
+ * day).
+ *
+ * This is what actually gives the prospecting agent something real to
+ * work with (problem/audience/positioning/features/pricing/cta) instead
+ * of just a bare name and URL.
+ */
+export async function getProductMostNeedingAudit(): Promise<Product | null> {
+  const products = await listAutonomousProducts();
+
+  if (products.length === 0) {
+    return null;
+  }
+
+  const sorted = [...products].sort((a, b) => {
+    const aAudited = Boolean(a.last_audited_at);
+    const bAudited = Boolean(b.last_audited_at);
+
+    if (aAudited !== bAudited) {
+      // Never-audited products always come before audited ones.
+      return aAudited ? 1 : -1;
+    }
+
+    if (!aAudited && !bAudited) {
+      // Both never audited — oldest-created first, for determinism.
+      return (
+        new Date(a.created_at).getTime() -
+        new Date(b.created_at).getTime()
+      );
+    }
+
+    // Both audited — the one audited longest ago goes first.
+    return (
+      new Date(a.last_audited_at as string).getTime() -
+      new Date(b.last_audited_at as string).getTime()
+    );
+  });
+
+  return sorted[0];
+}
+
+/**
  * Returns the most recent successful website-audit task result for a product.
  */
 export async function getLatestWebsiteAuditResult(

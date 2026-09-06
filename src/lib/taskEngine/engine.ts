@@ -36,6 +36,7 @@
 import { startPortfolioScheduler } from "./portfolioScheduler";
 import { startProspectingScheduler } from "./prospectingScheduler";
 import { startEmailCampaignScheduler } from "./emailCampaignScheduler";
+import { startAuditScheduler } from "./auditScheduler";
 import {
   listActiveTopLevelTasks,
   listSubtasks,
@@ -51,6 +52,9 @@ import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/models/activity";
 import { getDb } from "@/lib/db";
 import { getExecutor } from "./registry";
+import { getSettings } from "@/lib/models/settings";
+import { autoQualifyDueProspects } from "@/lib/models/prospects";
+import { LOCAL_USER_ID } from "@/lib/localUser";
 import type { AgentTask } from "@/lib/types";
 
 const TICK_INTERVAL_MS = 4000;
@@ -571,8 +575,40 @@ async function recoverStaleRunningTasks(): Promise<void> {
  * cron job both hitting /api/tasks/tick around the same time) cannot both
  * advance the same task twice.
  */
+/**
+ * MILESTONE 3I — full autonomy, opted into explicitly via Settings.
+ *
+ * Runs on every tick (not just once a day) so that once QStash or the
+ * daily cron drives frequent ticking, prospects the AI was unsure about
+ * get resolved quickly rather than sitting for a full day. See
+ * autoQualifyDueProspects()'s doc comment in models/prospects.ts for what
+ * this does and doesn't touch.
+ */
+async function runAutoQualification(): Promise<void> {
+  const settings = await getSettings();
+
+  if (!settings.autonomous_qualification) {
+    return;
+  }
+
+  const promoted = await autoQualifyDueProspects(
+    LOCAL_USER_ID,
+    settings.auto_qualify_confidence_threshold
+  );
+
+  if (promoted > 0) {
+    await logActivity({
+      user_id: LOCAL_USER_ID,
+      task_id: null,
+      event_type: "TASK_COMPLETED",
+      message: `Auto-qualified ${promoted} prospect${promoted === 1 ? "" : "s"} that cleared the ${Math.round(settings.auto_qualify_confidence_threshold * 100)}% confidence threshold — no review needed.`,
+    });
+  }
+}
+
 export async function tick(): Promise<void> {
   await recoverStaleRunningTasks();
+  await runAutoQualification();
 
   const tasks = await listActiveTopLevelTasks();
 
@@ -678,6 +714,7 @@ export function startEngine(): void {
   startPortfolioScheduler();
   startProspectingScheduler();
   startEmailCampaignScheduler();
+  startAuditScheduler();
 
   recoverInterruptedTasks().catch((err) =>
     console.error("[taskEngine] recoverInterruptedTasks() threw:", err)

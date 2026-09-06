@@ -679,6 +679,22 @@ async function runMigrations(db: Db): Promise<void> {
     ],
     "write"
   );
+
+  /*
+   * MILESTONE 3O — geographic targeting per product.
+   *
+   * A free-text field the prospecting agent treats as a hard directive
+   * when searching for a given product (e.g. "Kenya first, then Eastern
+   * Africa"), rather than searching globally with no geographic
+   * awareness. Free text rather than a rigid structured field — some
+   * products may want city-level targeting, others continent-level, or
+   * exclusions ("not X") — this needs to accommodate whatever shape of
+   * instruction actually makes sense for a given product.
+   */
+  const productsColumns = await existingColumns("products");
+  if (!productsColumns.has("geographic_focus")) {
+    await db.execute(`ALTER TABLE products ADD COLUMN geographic_focus TEXT`);
+  }
 }
 
 /**

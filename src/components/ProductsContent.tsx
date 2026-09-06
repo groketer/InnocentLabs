@@ -14,6 +14,7 @@ export function ProductsContent() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
+  const [editingGeo, setEditingGeo] = useState<Record<string, string>>({});
 
   async function load() {
     try {
@@ -74,6 +75,24 @@ export function ProductsContent() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save notes.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function saveGeographicFocus(id: string) {
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/products/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ geographic_focus: editingGeo[id] ?? "" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not save geographic targeting.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save geographic targeting.");
     } finally {
       setBusyId(null);
     }
@@ -230,6 +249,31 @@ export function ProductsContent() {
                       className="mt-1 rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-ink-950 disabled:opacity-50"
                     >
                       Save notes
+                    </button>
+                  )}
+              </div>
+
+              <div className="mt-3">
+                <label className="text-xs text-white/40">
+                  Geographic targeting — a hard directive for prospecting, not just a preference
+                </label>
+                <textarea
+                  placeholder='e.g. "Kenya first. Eastern Africa as a second priority once Kenya is well covered."'
+                  defaultValue={p.geographic_focus ?? ""}
+                  onChange={(e) =>
+                    setEditingGeo((prev) => ({ ...prev, [p.id]: e.target.value }))
+                  }
+                  rows={2}
+                  className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-xs text-white outline-none focus:border-emerald-500/50"
+                />
+                {editingGeo[p.id] !== undefined &&
+                  editingGeo[p.id] !== (p.geographic_focus ?? "") && (
+                    <button
+                      disabled={busyId === p.id}
+                      onClick={() => saveGeographicFocus(p.id)}
+                      className="mt-1 rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-ink-950 disabled:opacity-50"
+                    >
+                      Save targeting
                     </button>
                   )}
               </div>

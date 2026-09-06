@@ -147,6 +147,7 @@ export interface Product {
   evidence: string | null;
   unknowns: string | null;
   confidence: number | null;
+  geographic_focus: string | null;
   last_audited_at: string | null;
   created_at: string;
   updated_at: string;

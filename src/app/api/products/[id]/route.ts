@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateProductNotes } from "@/lib/models/products";
+import { updateProductNotes, updateProductGeographicFocus } from "@/lib/models/products";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,14 +11,21 @@ export async function PATCH(
   try {
     const body = await req.json();
 
-    if (typeof body?.notes !== "string") {
+    if (typeof body?.notes !== "string" && typeof body?.geographic_focus !== "string") {
       return NextResponse.json(
-        { error: "notes (string) is required." },
+        { error: "notes or geographic_focus (string) is required." },
         { status: 400 }
       );
     }
 
-    const product = await updateProductNotes(params.id, body.notes);
+    let product;
+    if (typeof body?.notes === "string") {
+      product = await updateProductNotes(params.id, body.notes);
+    }
+    if (typeof body?.geographic_focus === "string") {
+      product = await updateProductGeographicFocus(params.id, body.geographic_focus);
+    }
+
     return NextResponse.json({ product });
   } catch (error) {
     console.error("[api/products/[id]] PATCH failed:", error);

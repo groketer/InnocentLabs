@@ -787,3 +787,45 @@ export async function updateProductNotes(
 
   return product;
 }
+
+/**
+ * MILESTONE 3O — geographic targeting per product.
+ *
+ * A free-text instruction (e.g. "Kenya first, then Eastern Africa as a
+ * second priority") that the prospecting agent treats as a hard
+ * directive for this specific product — see buildProductContext() in
+ * prospecting.ts, which includes this verbatim in the agent's brief when
+ * it's set.
+ */
+export async function updateProductGeographicFocus(
+  id: string,
+  geographicFocus: string
+): Promise<Product> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      UPDATE products
+      SET geographic_focus = @geographic_focus, updated_at = ${NOW_ISO_SQL}
+      WHERE id = @id
+    `,
+    args: { id, geographic_focus: geographicFocus || null },
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Product not found.");
+  }
+
+  const result2 = await db.execute({
+    sql: `SELECT * FROM products WHERE id = ?`,
+    args: [id],
+  });
+
+  const product = result2.rows[0] as unknown as Product | undefined;
+
+  if (!product) {
+    throw new Error("Product was updated but could not be retrieved afterward.");
+  }
+
+  return product;
+}

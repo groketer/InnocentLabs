@@ -806,6 +806,21 @@ Features: ${product.features ?? "Unknown"}
 Commercial model: ${product.commercial_model ?? "Unknown"}
 Pricing: ${product.pricing ?? "Unknown"}
 CTA: ${product.cta ?? "Unknown"}
+${
+  product.geographic_focus
+    ? `
+GEOGRAPHIC TARGETING — HARD DIRECTIVE, NOT A PREFERENCE:
+
+${product.geographic_focus}
+
+Search and qualify prospects according to this priority order. Do not
+treat this as a soft preference to weigh against other factors — it is a
+direct instruction about where to look. If a phase is described as
+"first," exhaust genuine effort there before considering any
+later-priority region. Do not surface a prospect from outside the stated
+region(s) for this product.`
+    : ""
+}
 
 IMPORTANT:
 

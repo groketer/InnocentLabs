@@ -6,6 +6,17 @@ import type { Prospect } from "@/lib/models/prospects";
 
 type SequenceWithProduct = Prospect & { product_name: string | null };
 
+interface ConversationItem {
+  id: string;
+  at: string;
+  from: "us" | "them";
+  kind: "outbound" | "reply" | "bounce" | "auto_reply" | "unmatched";
+  subject?: string;
+  body?: string;
+  status?: string;
+  note?: string;
+}
+
 const STATUS_META: Record<
   Prospect["sequence_status"],
   { label: string; className: string }
@@ -30,6 +41,9 @@ export function FollowUpsContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [runningNow, setRunningNow] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [conversation, setConversation] = useState<ConversationItem[] | null>(null);
+  const [conversationError, setConversationError] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -64,6 +78,29 @@ export function FollowUpsContent() {
       setError(err instanceof Error ? err.message : "Could not update sequence.");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function toggleConversation(id: string) {
+    if (expandedId === id) {
+      setExpandedId(null);
+      setConversation(null);
+      return;
+    }
+
+    setExpandedId(id);
+    setConversation(null);
+    setConversationError(null);
+
+    try {
+      const res = await fetch(`/api/followups/${id}/conversation`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not load conversation.");
+      setConversation(data.items);
+    } catch (err) {
+      setConversationError(
+        err instanceof Error ? err.message : "Could not load conversation."
+      );
     }
   }
 
@@ -223,7 +260,67 @@ export function FollowUpsContent() {
                     Mark handled — I replied personally
                   </button>
                 )}
+                {s.emails_sent > 0 && (
+                  <button
+                    onClick={() => toggleConversation(s.id)}
+                    className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:text-white"
+                  >
+                    {expandedId === s.id ? "Hide conversation" : "View conversation"}
+                  </button>
+                )}
               </div>
+
+              {expandedId === s.id && (
+                <div className="mt-4 space-y-3 border-t border-ink-700 pt-4">
+                  {conversationError ? (
+                    <p className="text-xs text-red-300">{conversationError}</p>
+                  ) : !conversation ? (
+                    <p className="text-xs text-white/40">Loading…</p>
+                  ) : conversation.length === 0 ? (
+                    <p className="text-xs text-white/40">Nothing recorded yet.</p>
+                  ) : (
+                    conversation.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`rounded-md border px-3 py-2 text-xs ${
+                          item.from === "us"
+                            ? "border-emerald-500/20 bg-emerald-500/5"
+                            : "border-sky-500/20 bg-sky-500/5"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-white/40">
+                          <span className="font-medium text-white/70">
+                            {item.from === "us"
+                              ? item.kind === "reply"
+                                ? "You (autonomous reply)"
+                                : "You (outreach)"
+                              : item.kind === "bounce"
+                                ? `${s.name} — bounced`
+                                : item.kind === "auto_reply"
+                                  ? `${s.name} — auto-responder (skipped)`
+                                  : s.name}
+                          </span>
+                          <span>{formatTimestamp(item.at)}</span>
+                        </div>
+                        {item.subject && (
+                          <p className="mt-1 font-medium text-white/80">{item.subject}</p>
+                        )}
+                        {item.body && (
+                          <p className="mt-1 whitespace-pre-wrap text-white/60">
+                            {item.body.slice(0, 1000)}
+                          </p>
+                        )}
+                        {item.note && (
+                          <p className="mt-1 text-white/40">Note: {item.note}</p>
+                        )}
+                        {item.status === "failed" && (
+                          <p className="mt-1 text-red-300">Send failed.</p>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           ))
         )}

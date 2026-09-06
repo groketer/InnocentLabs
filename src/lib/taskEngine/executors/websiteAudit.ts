@@ -318,6 +318,159 @@ interface DetectedSignals {
   };
 }
 
+/**
+ * MILESTONE 3M — genuine SEO auditing.
+ *
+ * Separate and additive to detectSignals() above: that function is about
+ * understanding what a product IS (pricing, audience, CTAs — feeding
+ * product intelligence). This is about technical/on-page SEO health —
+ * whether the page is actually well-formed for search engines — an
+ * entirely different concern that happened to not exist yet. Computed
+ * from the exact same already-fetched HTML, no extra network cost for
+ * the core checks.
+ *
+ * Every finding here is a direct, mechanical observation of the HTML —
+ * "this page has two H1 tags," not an opinion — consistent with this
+ * whole file's evidence-only discipline.
+ */
+interface SeoSignals {
+  title_length: number | null;
+  title_issue: string | null;
+  meta_description_length: number | null;
+  meta_description_issue: string | null;
+  h1_count: number;
+  h1_issue: string | null;
+  is_https: boolean;
+  has_viewport_meta: boolean;
+  has_structured_data: boolean;
+  structured_data_types: string[];
+  has_open_graph_tags: boolean;
+  images_total: number;
+  images_missing_alt: number;
+  word_count: number;
+  issues: string[];
+}
+
+function analyzeSeo(html: string, url: string, visibleText: string): SeoSignals {
+  const issues: string[] = [];
+
+  // Title
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const titleText = titleMatch ? titleMatch[1].trim() : null;
+  const titleLength = titleText ? titleText.length : null;
+  let titleIssue: string | null = null;
+  if (!titleText) {
+    titleIssue = "No <title> tag found.";
+    issues.push(titleIssue);
+  } else if (titleText.length < 15) {
+    titleIssue = `Title is very short (${titleText.length} characters) — likely not descriptive enough.`;
+    issues.push(titleIssue);
+  } else if (titleText.length > 60) {
+    titleIssue = `Title is ${titleText.length} characters — search engines typically truncate titles beyond ~60.`;
+    issues.push(titleIssue);
+  }
+
+  // Meta description
+  const metaMatch = html.match(
+    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i
+  );
+  const metaText = metaMatch ? metaMatch[1].trim() : null;
+  const metaLength = metaText ? metaText.length : null;
+  let metaIssue: string | null = null;
+  if (!metaText) {
+    metaIssue = "No meta description — search engines will auto-generate one, usually poorly.";
+    issues.push(metaIssue);
+  } else if (metaText.length < 50) {
+    metaIssue = `Meta description is short (${metaText.length} characters) — room to be more compelling.`;
+    issues.push(metaIssue);
+  } else if (metaText.length > 160) {
+    metaIssue = `Meta description is ${metaText.length} characters — typically truncated beyond ~160.`;
+    issues.push(metaIssue);
+  }
+
+  // H1 structure
+  const h1Matches = html.match(/<h1[^>]*>/gi) ?? [];
+  const h1Count = h1Matches.length;
+  let h1Issue: string | null = null;
+  if (h1Count === 0) {
+    h1Issue = "No H1 tag found on the page.";
+    issues.push(h1Issue);
+  } else if (h1Count > 1) {
+    h1Issue = `${h1Count} H1 tags found — should normally be exactly one per page.`;
+    issues.push(h1Issue);
+  }
+
+  // HTTPS
+  const isHttps = url.toLowerCase().startsWith("https://");
+  if (!isHttps) {
+    issues.push("Page is not served over HTTPS — this affects both trust and search ranking.");
+  }
+
+  // Mobile viewport
+  const hasViewportMeta = /<meta[^>]+name=["']viewport["']/i.test(html);
+  if (!hasViewportMeta) {
+    issues.push("No mobile viewport meta tag — the page may not be mobile-friendly, a significant ranking factor.");
+  }
+
+  // Structured data (JSON-LD)
+  const jsonLdMatches = [...html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  const structuredDataTypes: string[] = [];
+  for (const match of jsonLdMatches) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      const type = Array.isArray(parsed) ? parsed[0]?.["@type"] : parsed?.["@type"];
+      if (type) structuredDataTypes.push(String(type));
+    } catch {
+      // Malformed JSON-LD is itself worth flagging.
+      issues.push("Found a structured data block, but it isn't valid JSON — search engines will ignore it.");
+    }
+  }
+  const hasStructuredData = jsonLdMatches.length > 0;
+  if (!hasStructuredData) {
+    issues.push("No structured data (schema.org markup) found — missing an opportunity for rich search results.");
+  }
+
+  // Open Graph
+  const hasOpenGraphTags = /<meta[^>]+property=["']og:/i.test(html);
+  if (!hasOpenGraphTags) {
+    issues.push("No Open Graph tags — links shared on social media won't show a proper preview.");
+  }
+
+  // Images and alt text
+  const imgTags = html.match(/<img\b[^>]*>/gi) ?? [];
+  const imagesTotal = imgTags.length;
+  const imagesMissingAlt = imgTags.filter(
+    (tag) => !/\balt\s*=\s*["'][^"']*["']/i.test(tag) || /\balt\s*=\s*["']\s*["']/i.test(tag)
+  ).length;
+  if (imagesTotal > 0 && imagesMissingAlt > 0) {
+    issues.push(`${imagesMissingAlt} of ${imagesTotal} images are missing descriptive alt text.`);
+  }
+
+  // Word count (thin content check)
+  const wordCount = visibleText.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 200) {
+    issues.push(`Only ~${wordCount} words of visible content — likely too thin for search engines to understand what the page is about.`);
+  }
+
+  return {
+    title_length: titleLength,
+    title_issue: titleIssue,
+    meta_description_length: metaLength,
+    meta_description_issue: metaIssue,
+    h1_count: h1Count,
+    h1_issue: h1Issue,
+    is_https: isHttps,
+    has_viewport_meta: hasViewportMeta,
+    has_structured_data: hasStructuredData,
+    structured_data_types: structuredDataTypes,
+    has_open_graph_tags: hasOpenGraphTags,
+    images_total: imagesTotal,
+    images_missing_alt: imagesMissingAlt,
+    word_count: wordCount,
+    issues,
+  };
+}
+
 function detectSignals(
   visibleText: string,
   links: Array<{
@@ -594,6 +747,7 @@ interface WebsiteObservation {
   visible_text_sample: string;
 
   signals: DetectedSignals;
+  seo: SeoSignals;
 
   evidence_type:
     | "DIRECT_WEBSITE_OBSERVATION";
@@ -1375,6 +1529,13 @@ export const websiteAuditExecutor: TaskExecutor = {
           links
         );
 
+      const seo =
+        analyzeSeo(
+          html,
+          finalUrl,
+          visibleText
+        );
+
       const observation:
         WebsiteObservation = {
         url,
@@ -1414,13 +1575,15 @@ export const websiteAuditExecutor: TaskExecutor = {
         phone_numbers:
           phoneNumbers,
 
+        signals,
+
+        seo,
+
         visible_text_sample:
           visibleText.slice(
             0,
             5000
           ),
-
-        signals,
 
         evidence_type:
           "DIRECT_WEBSITE_OBSERVATION",
@@ -1509,6 +1672,11 @@ export const websiteAuditExecutor: TaskExecutor = {
             )}.`
           : " No major commercial signals were confidently detected.";
 
+      const seoSummary =
+        seo.issues.length > 0
+          ? ` SEO: ${seo.issues.length} issue${seo.issues.length === 1 ? "" : "s"} found.`
+          : " SEO: no significant issues found.";
+
       return {
         success: true,
 
@@ -1518,13 +1686,15 @@ export const websiteAuditExecutor: TaskExecutor = {
           `${headings.length} headings, ` +
           `${links.length} links, ` +
           `${unknowns.length} explicit unknowns, ` +
-          `confidence ${confidence}.${signalSummary}`,
+          `confidence ${confidence}.${signalSummary}${seoSummary}`,
 
         resultData: {
           product_name:
             product.name,
 
           observation,
+
+          seo,
 
           evidence:
             buildEvidenceItems(

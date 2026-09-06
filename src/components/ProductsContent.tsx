@@ -5,8 +5,10 @@ import { formatTimestamp } from "@/lib/format";
 import type { Product } from "@/lib/types";
 import type { ProductInsight } from "@/lib/models/insights";
 
+type ProductWithSeo = Product & { seo_issues: string[] | null };
+
 export function ProductsContent() {
-  const [products, setProducts] = useState<Product[] | null>(null);
+  const [products, setProducts] = useState<ProductWithSeo[] | null>(null);
   const [insights, setInsights] = useState<Record<string, ProductInsight>>({});
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -23,7 +25,7 @@ export function ProductsContent() {
       const insightsData = await insightsRes.json();
       if (!productsRes.ok) throw new Error(data?.error || "Could not load products.");
       setProducts(
-        (data.products as Product[]).filter((p) => p.asset_type === "product")
+        (data.products as ProductWithSeo[]).filter((p) => p.asset_type === "product")
       );
       if (insightsRes.ok) {
         const map: Record<string, ProductInsight> = {};
@@ -179,6 +181,23 @@ export function ProductsContent() {
                   )}
                   {insights[p.id].unsubscribed > 0 && (
                     <span className="text-white/30">{insights[p.id].unsubscribed} unsubscribed</span>
+                  )}
+                </div>
+              )}
+
+              {p.seo_issues && (
+                <div className="mt-3 rounded-md border border-ink-800 bg-white/[0.02] px-3 py-2">
+                  <p className="text-xs font-medium text-white/60">
+                    {p.seo_issues.length === 0
+                      ? "SEO: no significant issues found"
+                      : `SEO: ${p.seo_issues.length} issue${p.seo_issues.length === 1 ? "" : "s"} found`}
+                  </p>
+                  {p.seo_issues.length > 0 && (
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-white/40">
+                      {p.seo_issues.map((issue, i) => (
+                        <li key={i}>{issue}</li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               )}

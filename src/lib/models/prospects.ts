@@ -1359,3 +1359,30 @@ export async function findProspectByDomain(
   const row = result.rows[0] as unknown as Record<string, unknown> | undefined;
   return row ? mapProspectRow(row) : null;
 }
+
+/**
+ * MILESTONE 3N — export/import.
+ *
+ * listProspects() is deliberately capped at 200 for the Prospects page's
+ * sake — a real export needs everything, not a UI-sized page of it. Kept
+ * as its own function rather than adding an "unlimited" escape hatch to
+ * listProspects(), so that cap can never accidentally be bypassed from
+ * somewhere it shouldn't be.
+ */
+export async function listAllProspectsForExport(
+  userId: string
+): Promise<Prospect[]> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) return [];
+
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `SELECT * FROM prospects WHERE user_id = ? ORDER BY created_at ASC LIMIT 50000`,
+    args: [normalizedUserId],
+  });
+
+  return (result.rows as unknown as Array<Record<string, unknown>>).map(
+    mapProspectRow
+  );
+}

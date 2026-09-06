@@ -134,13 +134,21 @@ export function FollowUpsContent() {
             their reply in your own inbox, and their sequence stops.
           </p>
         </div>
-        <button
-          onClick={runNow}
-          disabled={runningNow}
-          className="shrink-0 rounded-md border border-emerald-500/40 px-3 py-2 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
-        >
-          {runningNow ? "Running…" : "Run outreach now"}
-        </button>
+        <div className="flex shrink-0 gap-2">
+          <a
+            href="/api/followups/export"
+            className="rounded-md border border-ink-600 px-3 py-2 text-xs text-white/60 transition-colors hover:text-white"
+          >
+            Download CSV
+          </a>
+          <button
+            onClick={runNow}
+            disabled={runningNow}
+            className="rounded-md border border-emerald-500/40 px-3 py-2 text-xs font-medium text-emerald-300 transition-colors hover:bg-emerald-500/10 disabled:opacity-50"
+          >
+            {runningNow ? "Running…" : "Run outreach now"}
+          </button>
+        </div>
       </div>
       <p className="mt-2 text-xs text-white/30">
         On Vercel, outreach normally only runs once a day automatically.

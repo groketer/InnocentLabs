@@ -57,6 +57,11 @@ export function ProspectsContent() {
   );
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    imported: number;
+    skipped: Array<{ row: number; reason: string }>;
+  } | null>(null);
 
   async function load() {
     try {
@@ -78,6 +83,33 @@ export function ProspectsContent() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterIndex]);
+
+  async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    setImporting(true);
+    setImportResult(null);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/prospects/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not import prospects.");
+      setImportResult(data);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not import prospects.");
+    } finally {
+      setImporting(false);
+    }
+  }
 
   async function setStatus(
     id: string,
@@ -111,12 +143,48 @@ export function ProspectsContent() {
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
-      <h1 className="text-lg font-semibold text-white">Prospects</h1>
-      <p className="mt-1 text-xs text-white/40">
-        People and organizations discovered through research, with the
-        evidence behind each one. Marking someone &quot;Qualified&quot;
-        starts an email outreach sequence for them — see Follow-ups.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-white">Prospects</h1>
+          <p className="mt-1 text-xs text-white/40">
+            People and organizations discovered through research, with the
+            evidence behind each one. Marking someone &quot;Qualified&quot;
+            starts an email outreach sequence for them — see Follow-ups.
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <a
+            href="/api/prospects/export"
+            className="rounded-md border border-ink-600 px-3 py-2 text-xs text-white/60 transition-colors hover:text-white"
+          >
+            Download CSV
+          </a>
+          <label className="cursor-pointer rounded-md border border-ink-600 px-3 py-2 text-xs text-white/60 transition-colors hover:text-white">
+            {importing ? "Importing…" : "Import CSV"}
+            <input
+              type="file"
+              accept=".csv"
+              className="hidden"
+              disabled={importing}
+              onChange={handleImportFile}
+            />
+          </label>
+        </div>
+      </div>
+
+      {importResult && (
+        <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          Imported {importResult.imported} prospect{importResult.imported === 1 ? "" : "s"}.
+          {importResult.skipped.length > 0 && (
+            <>
+              {" "}
+              {importResult.skipped.length} skipped —{" "}
+              {importResult.skipped.slice(0, 3).map((s) => s.reason).join("; ")}
+              {importResult.skipped.length > 3 ? "…" : ""}
+            </>
+          )}
+        </div>
+      )}
 
       <div className="mt-4 flex flex-wrap gap-2">
         {STATUS_FILTERS.map((f, i) => (

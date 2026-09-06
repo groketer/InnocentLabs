@@ -118,3 +118,13 @@ export async function listInboundEmailsForProspect(
 
   return (result.rows as unknown as Array<Record<string, unknown>>).map(mapRow);
 }
+
+/** All inbound messages for a user, for export/backup — not scoped to one prospect. */
+export async function listAllInboundForExport(userId: string): Promise<InboundEmail[]> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT * FROM inbound_emails WHERE user_id = ? ORDER BY received_at ASC LIMIT 50000`,
+    args: [userId],
+  });
+  return (result.rows as unknown as Array<Record<string, unknown>>).map(mapRow);
+}

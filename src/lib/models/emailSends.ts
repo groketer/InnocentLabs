@@ -160,3 +160,13 @@ export async function countRepliesForProspect(
   const row = result.rows[0] as unknown as { c: number | string } | undefined;
   return row ? Number(row.c) : 0;
 }
+
+/** All sends for a user, for export/backup — not scoped to one prospect. */
+export async function listAllSendsForExport(userId: string): Promise<EmailSend[]> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT * FROM email_sends WHERE user_id = ? ORDER BY sent_at ASC LIMIT 50000`,
+    args: [userId],
+  });
+  return (result.rows as unknown as Array<Record<string, unknown>>).map(mapRow);
+}

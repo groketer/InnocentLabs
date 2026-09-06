@@ -81,12 +81,22 @@ export function ProductsContent() {
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
-      <h1 className="text-lg font-semibold text-white">Products</h1>
-      <p className="mt-1 text-xs text-white/40">
-        The Innocent Labs portfolio — what the agent strategizes on how to
-        market. Prospects and outreach always target people and
-        organizations outside this list, never anything shown here.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-white">Products</h1>
+          <p className="mt-1 text-xs text-white/40">
+            The Innocent Labs portfolio — what the agent strategizes on how to
+            market. Prospects and outreach always target people and
+            organizations outside this list, never anything shown here.
+          </p>
+        </div>
+        <a
+          href="/api/products/export"
+          className="shrink-0 rounded-md border border-ink-600 px-3 py-2 text-xs text-white/60 transition-colors hover:text-white"
+        >
+          Download CSV
+        </a>
+      </div>
 
       {notice && (
         <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">

@@ -331,6 +331,22 @@ export function SettingsContent() {
       </div>
 
       <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">
+        <h2 className="text-sm font-semibold text-white">Backup</h2>
+        <p className="mt-1 text-xs text-white/40">
+          A full export of your data — every prospect, every email sent and
+          received, your product portfolio, and these settings — as one
+          file. Worth downloading periodically, and definitely before any
+          major change you&apos;re unsure about.
+        </p>
+        <a
+          href="/api/backup/export"
+          className="mt-3 inline-block rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-ink-950 transition-opacity hover:opacity-90"
+        >
+          Download full backup
+        </a>
+      </div>
+
+      <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">
         <h2 className="text-sm font-semibold text-white">Infrastructure</h2>
         <p className="mt-1 text-xs text-white/40">
           Managed in Vercel&apos;s environment variables, not here — shown for

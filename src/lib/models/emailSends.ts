@@ -1,9 +1,12 @@
 /**
  * MILESTONE 3F — Follow-up campaigns.
+ * MILESTONE 3J — extended for inbound replies (direction, threading).
  *
- * One row per actually-attempted send. This is both the audit trail shown
- * in the Follow-ups view and the record a future round can look back on
- * (via listSendsForProspect) to avoid repeating itself.
+ * One row per actually-attempted send — both outbound cold/follow-up
+ * emails AND autonomous replies to inbound messages share this table, so
+ * the Follow-ups view shows one unified timeline per prospect. `direction`
+ * distinguishes the two; `message_id`/`in_reply_to` support proper email
+ * threading for replies.
  */
 
 import { randomUUID } from "crypto";
@@ -19,6 +22,9 @@ export interface EmailSend {
   body: string;
   status: "sent" | "failed";
   error_message?: string;
+  direction: "outbound" | "reply";
+  message_id?: string;
+  in_reply_to?: string;
   sent_at: string;
 }
 
@@ -33,6 +39,9 @@ function mapRow(row: Record<string, unknown>): EmailSend {
     body: String(row.body),
     status: row.status === "failed" ? "failed" : "sent",
     error_message: row.error_message ? String(row.error_message) : undefined,
+    direction: row.direction === "reply" ? "reply" : "outbound",
+    message_id: row.message_id ? String(row.message_id) : undefined,
+    in_reply_to: row.in_reply_to ? String(row.in_reply_to) : undefined,
     sent_at: String(row.sent_at),
   };
 }
@@ -46,6 +55,9 @@ export async function recordEmailSend(input: {
   body: string;
   status: "sent" | "failed";
   error_message?: string | null;
+  direction?: "outbound" | "reply";
+  message_id?: string | null;
+  in_reply_to?: string | null;
 }): Promise<EmailSend> {
   const db = await getDb();
   const id = randomUUID();
@@ -53,9 +65,11 @@ export async function recordEmailSend(input: {
   await db.execute({
     sql: `
       INSERT INTO email_sends (
-        id, user_id, prospect_id, task_id, step, subject, body, status, error_message
+        id, user_id, prospect_id, task_id, step, subject, body, status,
+        error_message, direction, message_id, in_reply_to
       ) VALUES (
-        @id, @user_id, @prospect_id, @task_id, @step, @subject, @body, @status, @error_message
+        @id, @user_id, @prospect_id, @task_id, @step, @subject, @body, @status,
+        @error_message, @direction, @message_id, @in_reply_to
       )
     `,
     args: {
@@ -68,6 +82,9 @@ export async function recordEmailSend(input: {
       body: input.body,
       status: input.status,
       error_message: input.error_message ?? null,
+      direction: input.direction ?? "outbound",
+      message_id: input.message_id ?? null,
+      in_reply_to: input.in_reply_to ?? null,
     },
   });
 
@@ -94,6 +111,21 @@ export async function listSendsForProspect(
   );
 }
 
+/** The most recent send (either direction) for a prospect — used to find what Message-ID a new reply should thread against. */
+export async function getLatestSendForProspect(
+  prospectId: string
+): Promise<EmailSend | null> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `SELECT * FROM email_sends WHERE prospect_id = ? AND status = 'sent' ORDER BY sent_at DESC LIMIT 1`,
+    args: [prospectId],
+  });
+
+  const row = result.rows[0] as unknown as Record<string, unknown> | undefined;
+  return row ? mapRow(row) : null;
+}
+
 /** Total successful sends today, across all prospects — for the daily send limit. */
 export async function countSendsToday(userId: string): Promise<number> {
   const db = await getDb();
@@ -108,6 +140,21 @@ export async function countSendsToday(userId: string): Promise<number> {
         AND sent_at LIKE ?
     `,
     args: [userId, todayPrefix],
+  });
+
+  const row = result.rows[0] as unknown as { c: number | string } | undefined;
+  return row ? Number(row.c) : 0;
+}
+
+/** How many autonomous replies have already been sent to this prospect — for the runaway-conversation safety cap. */
+export async function countRepliesForProspect(
+  prospectId: string
+): Promise<number> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `SELECT COUNT(*) as c FROM email_sends WHERE prospect_id = ? AND direction = 'reply' AND status = 'sent'`,
+    args: [prospectId],
   });
 
   const row = result.rows[0] as unknown as { c: number | string } | undefined;

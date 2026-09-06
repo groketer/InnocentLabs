@@ -24,12 +24,20 @@ export interface SendEmailInput {
   /** Plain-text body WITHOUT the compliance footer — appendComplianceFooter() adds it. */
   body: string;
   unsubscribeToken: string;
+  /**
+   * For a reply: the Message-ID of the email being replied to, so it
+   * threads correctly in the recipient's inbox instead of showing up as
+   * an unrelated new message.
+   */
+  inReplyTo?: string;
 }
 
 export interface SendEmailResult {
   success: boolean;
   finalBody: string;
   errorMessage?: string;
+  /** The Message-ID nodemailer generated for this send, if it succeeded — needed to thread a future reply-to-this-reply. */
+  messageId?: string;
 }
 
 function isSmtpConfigured(): boolean {
@@ -142,15 +150,18 @@ export async function sendEmail(
   const bcc = bccRecipients();
 
   try {
-    await getTransporter().sendMail({
+    const info = await getTransporter().sendMail({
       from: `"${fromName}" <${process.env.SMTP_USER}>`,
       to: input.to,
       ...(bcc.length > 0 ? { bcc } : {}),
       subject: input.subject,
       text: finalBody,
+      ...(input.inReplyTo
+        ? { inReplyTo: input.inReplyTo, references: input.inReplyTo }
+        : {}),
     });
 
-    return { success: true, finalBody };
+    return { success: true, finalBody, messageId: info.messageId };
   } catch (error) {
     return {
       success: false,

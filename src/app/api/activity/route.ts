@@ -14,11 +14,13 @@ export async function GET(req: NextRequest) {
       ? (typesParam.split(",") as ActivityEventType[])
       : undefined;
     const limitParam = searchParams.get("limit");
+    const offsetParam = searchParams.get("offset");
 
     const activity = await listActivity({
       user_id: LOCAL_USER_ID,
       eventTypes,
       limit: limitParam ? Number(limitParam) : undefined,
+      offset: offsetParam ? Number(offsetParam) : undefined,
     });
 
     return NextResponse.json({ activity });

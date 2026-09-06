@@ -39,6 +39,10 @@ export interface AppSettings {
   autonomous_qualification: boolean;
   /** Confidence (0–1) a needs_review prospect must clear to be auto-qualified when autonomous_qualification is on. */
   auto_qualify_confidence_threshold: number;
+  /** When true, the system checks the inbox and autonomously replies to prospects who write back (subject to the escalation rules baked into the reply composer). */
+  autonomous_replies: boolean;
+  /** Safety cap: after this many autonomous replies in one conversation, stop and flag for human review regardless of what the AI would otherwise do. */
+  max_autonomous_replies_per_conversation: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -50,6 +54,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autonomous_campaigns: true,
   autonomous_qualification: true,
   auto_qualify_confidence_threshold: 0.4,
+  autonomous_replies: true,
+  max_autonomous_replies_per_conversation: 15,
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<
@@ -61,6 +67,7 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
   "autonomous_prospecting",
   "autonomous_campaigns",
   "autonomous_qualification",
+  "autonomous_replies",
 ]);
 
 function coerce(key: keyof AppSettings, raw: string): number | boolean {
@@ -108,6 +115,8 @@ export interface UpdateSettingsInput {
   autonomous_campaigns?: boolean;
   autonomous_qualification?: boolean;
   auto_qualify_confidence_threshold?: number;
+  autonomous_replies?: boolean;
+  max_autonomous_replies_per_conversation?: number;
 }
 
 function validate(input: UpdateSettingsInput): void {
@@ -150,6 +159,17 @@ function validate(input: UpdateSettingsInput): void {
   ) {
     throw new Error(
       "auto_qualify_confidence_threshold must be a number between 0 and 1."
+    );
+  }
+
+  if (
+    input.max_autonomous_replies_per_conversation !== undefined &&
+    (!Number.isInteger(input.max_autonomous_replies_per_conversation) ||
+      input.max_autonomous_replies_per_conversation < 1 ||
+      input.max_autonomous_replies_per_conversation > 100)
+  ) {
+    throw new Error(
+      "max_autonomous_replies_per_conversation must be a whole number between 1 and 100."
     );
   }
 }

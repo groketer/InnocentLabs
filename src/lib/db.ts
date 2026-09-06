@@ -549,6 +549,75 @@ async function runMigrations(db: Db): Promise<void> {
   );
 
   /*
+   * MILESTONE 3J — Inbound email: replies and bounces.
+   *
+   * email_sends needs a couple of additions to support this:
+   * - direction: distinguishes an outbound cold/follow-up email from an
+   *   autonomous reply sent back to someone who wrote in.
+   * - message_id: the RFC 5322 Message-ID nodemailer generated for this
+   *   send, captured so a LATER reply-to-a-reply can be threaded
+   *   correctly (In-Reply-To/References headers).
+   * - in_reply_to: the Message-ID of the inbound email this one is
+   *   replying to, if any.
+   */
+  const emailSendsColumns = await existingColumns("email_sends");
+
+  if (!emailSendsColumns.has("direction")) {
+    await db.execute(
+      `ALTER TABLE email_sends ADD COLUMN direction TEXT NOT NULL DEFAULT 'outbound'`
+    );
+  }
+  if (!emailSendsColumns.has("message_id")) {
+    await db.execute(`ALTER TABLE email_sends ADD COLUMN message_id TEXT`);
+  }
+  if (!emailSendsColumns.has("in_reply_to")) {
+    await db.execute(`ALTER TABLE email_sends ADD COLUMN in_reply_to TEXT`);
+  }
+
+  /*
+   * One row per inbound email the IMAP checker has seen, whether it
+   * turned out to be a genuine reply, a bounce notification, an
+   * auto-reply (vacation responder etc. — never worth replying to), or
+   * something from an unrecognized sender. This is both the audit trail
+   * (so a person can see exactly what came in and how it was handled)
+   * and the idempotency guard (message_id is unique, so re-fetching the
+   * same email twice — e.g. from overlapping IMAP checks — never
+   * processes it twice).
+   */
+  await db.batch(
+    [
+      {
+        sql: `CREATE TABLE IF NOT EXISTS inbound_emails (
+          id             TEXT PRIMARY KEY,
+          user_id        TEXT NOT NULL,
+          prospect_id    TEXT REFERENCES prospects(id),
+          message_id     TEXT,
+          from_address   TEXT NOT NULL,
+          subject        TEXT,
+          body           TEXT,
+          classification TEXT NOT NULL,
+          handled        TEXT NOT NULL DEFAULT 'pending',
+          note           TEXT,
+          received_at    TEXT NOT NULL DEFAULT (${NOW_ISO_SQL})
+        )`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_inbound_emails_prospect
+          ON inbound_emails(prospect_id)`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_inbound_emails_user
+          ON inbound_emails(user_id)`,
+      },
+      {
+        sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_emails_message_id
+          ON inbound_emails(message_id) WHERE message_id IS NOT NULL`,
+      },
+    ],
+    "write"
+  );
+
+  /*
    * MILESTONE 3H — Duplicate prospects.
    *
    * A duplicate prospect (same user, same product, same email) was

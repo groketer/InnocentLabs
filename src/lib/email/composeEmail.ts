@@ -1,43 +1,77 @@
 /**
  * MILESTONE 3F — Follow-up campaigns.
+ * MILESTONE 3K — upgraded with web browsing + an explicit "ask for more
+ * info" escalation path.
  *
- * Composes one outreach email's subject + body for one prospect, using the
- * evidence-backed fields already on their record (never anything invented
- * beyond what prospecting actually found and verified).
+ * Composes one outreach email's subject + body for one prospect, grounded
+ * in the evidence-backed fields already on record.
  *
- * Deliberately does NOT use the OpenAI Agents SDK / tool-calling — this is
- * a single constrained generation from data already in hand, not a task
- * that needs web search or multi-turn reasoning. A plain chat completion
- * is simpler, cheaper, and has a smaller/safer surface area.
+ * WHY THIS NOW USES THE AGENTS SDK (it didn't before):
+ * A real problem was reported — emails going out without the product's
+ * URL, and reading like the agent didn't actually understand what it was
+ * promoting. The root cause: this used to be a single plain completion
+ * working ONLY from whatever was already stored on the product record.
+ * If that record was thin (no audit yet), there was nothing here to fall
+ * back on — the model just wrote something vague. It now has the same
+ * live web-search tool the prospecting agent uses, so if the stored
+ * intelligence is thin, it can visit the product's own page itself before
+ * writing anything, the same fix already applied to prospecting.ts.
+ *
+ * It can also now explicitly decline to write a confident email and ask
+ * Innocent for more information instead, rather than send something
+ * generic — see the "request_info" action below.
  *
  * The compliance footer (sender identity, postal address, unsubscribe
  * link) is NOT part of what this generates — see
  * src/lib/email/sendEmail.ts's appendComplianceFooter(), which is applied
- * unconditionally afterward. This module is explicitly instructed not to
- * write anything resembling a sign-off, so the two never conflict or
- * duplicate.
+ * unconditionally afterward.
  */
 
-import OpenAI from "openai";
+import { Agent, run, webSearchTool } from "@openai/agents";
 import type { Prospect } from "@/lib/models/prospects";
 import type { Product } from "@/lib/types";
 import type { EmailSend } from "@/lib/models/emailSends";
 
 const MODEL = "gpt-4.1-mini";
+const MAX_TURNS = 4;
 
 const SYSTEM_PROMPT = `
 You write short, plain, respectful B2B outreach emails on behalf of Innocent Labs.
 
 STRICT GROUNDING RULE:
-You may only reference facts explicitly given to you about the prospect and
-the product below. You must NEVER:
+You may only reference facts explicitly given to you, or facts you
+directly observe by visiting the product's own URL with your web search
+tool. You must NEVER:
 - invent details about the prospect's company, achievements, needs, or circumstances;
 - claim the prospect has previously expressed interest, engaged, replied, or taken any action they have not;
-- claim specific results, customer counts, or metrics for the product that are not given to you;
+- claim specific results, customer counts, or metrics for the product that are not given to you or directly observed on its page;
 - use manipulative urgency, fake scarcity, or misleading subject lines.
 
 If the given evidence is thin, write a shorter, more modest email rather than
 padding it with invented specifics.
+
+UNDERSTAND THE PRODUCT BEFORE WRITING:
+If the product information given to you is thin (little more than a name
+and URL — no real problem/audience/positioning detail), visit the
+product's URL yourself with your web search tool before writing anything.
+Ground what you write in what you actually find there.
+
+IF YOU STILL CANNOT WRITE A CONFIDENT, SPECIFIC EMAIL:
+If, even after checking the product's page, you genuinely don't have
+enough to write something specific and credible (the page is broken,
+missing, too vague, or you can't find it) — do not write a generic email
+to fill the gap. Instead, use the "request_info" action below to ask
+Innocent for more detail. This should be rare, not a default — try to
+find the information yourself first. Use it when you genuinely cannot,
+not merely when the task is a little effortful.
+
+ALWAYS INCLUDE THE PRODUCT'S LINK:
+If a product URL is given, the email body must include it plainly (e.g.
+as part of a call to action like "you can see it here: <url>") so the
+recipient can go learn more or take action. Do not write an email that
+never mentions the URL when one is available. This has been missed
+before — treat it as a hard requirement, not something to remember to add
+"if it flows naturally."
 
 TONE:
 Plain, direct, human, low-hype. Write like a real person emailing another
@@ -72,8 +106,14 @@ DO NOT INCLUDE:
   duplicate them.
 
 OUTPUT FORMAT:
-Respond with ONLY a JSON object: {"subject": "...", "body": "..."}
-No markdown fences, no extra commentary.
+Respond with ONLY a JSON object, no markdown fences, no extra commentary,
+in ONE of these two shapes:
+
+{"action": "compose", "subject": "...", "body": "..."}
+
+or
+
+{"action": "request_info", "reason": "one or two sentences explaining what's missing, for Innocent to read"}
 `.trim();
 
 export interface ComposeEmailInput {
@@ -83,10 +123,9 @@ export interface ComposeEmailInput {
   previousSends: EmailSend[];
 }
 
-export interface ComposedEmail {
-  subject: string;
-  body: string;
-}
+export type ComposeEmailResult =
+  | { action: "compose"; subject: string; body: string }
+  | { action: "request_info"; reason: string };
 
 function buildUserPrompt(input: ComposeEmailInput): string {
   const { prospect, product, step, previousSends } = input;
@@ -118,7 +157,21 @@ function buildUserPrompt(input: ComposeEmailInput): string {
   if (product.audience) lines.push(`- Intended audience: ${product.audience}`);
   if (product.positioning) lines.push(`- Positioning: ${product.positioning}`);
   if (product.cta) lines.push(`- Call to action: ${product.cta}`);
-  if (product.url) lines.push(`- URL: ${product.url}`);
+  if (product.url) {
+    lines.push(`- URL: ${product.url}`);
+  } else {
+    lines.push(`- URL: none on file`);
+  }
+
+  const richFieldCount = [product.problem, product.audience, product.positioning, product.features]
+    .filter(Boolean).length;
+
+  if (richFieldCount <= 1 && product.url) {
+    lines.push("");
+    lines.push(
+      `NOTE: this product's stored intelligence is thin. Visit ${product.url} yourself before writing.`
+    );
+  }
 
   if (previousSends.length > 0) {
     lines.push("");
@@ -131,7 +184,7 @@ function buildUserPrompt(input: ComposeEmailInput): string {
   return lines.join("\n");
 }
 
-function parseComposedEmail(raw: string): ComposedEmail {
+function parseComposedEmail(raw: string): ComposeEmailResult {
   let cleaned = raw.trim();
   cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
 
@@ -142,44 +195,53 @@ function parseComposedEmail(raw: string): ComposedEmail {
     throw new Error("Email composer returned non-JSON output.");
   }
 
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    typeof (parsed as Record<string, unknown>).subject !== "string" ||
-    typeof (parsed as Record<string, unknown>).body !== "string"
-  ) {
-    throw new Error('Email composer output did not match {"subject","body"}.');
+  if (typeof parsed !== "object" || parsed === null) {
+    throw new Error("Email composer output was not a JSON object.");
   }
 
-  const subject = (parsed as { subject: string }).subject.trim();
-  const body = (parsed as { body: string }).body.trim();
+  const obj = parsed as Record<string, unknown>;
 
-  if (!subject || !body) {
-    throw new Error("Email composer returned an empty subject or body.");
+  if (obj.action === "request_info") {
+    if (typeof obj.reason !== "string" || !obj.reason.trim()) {
+      throw new Error('request_info output missing a "reason".');
+    }
+    return { action: "request_info", reason: obj.reason.trim() };
   }
 
-  return { subject, body };
+  if (obj.action === "compose") {
+    if (typeof obj.subject !== "string" || typeof obj.body !== "string") {
+      throw new Error('Email composer output missing "subject" or "body".');
+    }
+    const subject = obj.subject.trim();
+    const body = obj.body.trim();
+    if (!subject || !body) {
+      throw new Error("Email composer returned an empty subject or body.");
+    }
+    return { action: "compose", subject, body };
+  }
+
+  throw new Error(`Email composer returned an unrecognized action: ${String(obj.action)}`);
 }
 
 export async function composeOutreachEmail(
   input: ComposeEmailInput
-): Promise<ComposedEmail> {
+): Promise<ComposeEmailResult> {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not set — cannot compose email content.");
   }
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-  const completion = await client.chat.completions.create({
+  const agent = new Agent({
+    name: "Email Composer",
     model: MODEL,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: buildUserPrompt(input) },
-    ],
-    temperature: 0.6,
+    instructions: SYSTEM_PROMPT,
+    tools: [webSearchTool()],
   });
 
-  const raw = completion.choices[0]?.message?.content;
+  const result = await run(agent, buildUserPrompt(input), {
+    maxTurns: MAX_TURNS,
+  });
+
+  const raw = result.finalOutput;
 
   if (!raw) {
     throw new Error("Email composer returned no output.");

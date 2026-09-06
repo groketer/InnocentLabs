@@ -195,6 +195,24 @@ export const emailCampaignExecutor: TaskExecutor = {
       };
     }
 
+    if (composed.action === "request_info") {
+      // Not a transient failure — retrying immediately won't help, this
+      // needs Innocent to actually add more product detail. It'll be
+      // tried again fresh next time a campaign runs, in case that's
+      // happened by then.
+      return {
+        success: false,
+        summary: `Needs more information about ${product.name} before writing to ${prospect.name}: ${composed.reason}`,
+        errorMessage: composed.reason,
+        transientFailure: false,
+        resultData: {
+          prospect_id: prospect.id,
+          product_id: product.id,
+          reason: composed.reason,
+        },
+      };
+    }
+
     const sendResult = await sendEmail({
       to: prospect.email,
       subject: composed.subject,
@@ -211,6 +229,8 @@ export const emailCampaignExecutor: TaskExecutor = {
       body: sendResult.finalBody,
       status: sendResult.success ? "sent" : "failed",
       error_message: sendResult.errorMessage,
+      direction: "outbound",
+      message_id: sendResult.messageId,
     });
 
     if (!sendResult.success) {

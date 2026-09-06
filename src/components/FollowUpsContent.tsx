@@ -17,6 +17,9 @@ const STATUS_META: Record<
   unsubscribed: { label: "Unsubscribed", className: "text-red-400" },
   responded: { label: "Responded", className: "text-sky-400" },
   paused: { label: "Paused", className: "text-white/40" },
+  in_conversation: { label: "In conversation (agent replying)", className: "text-emerald-400" },
+  needs_human_reply: { label: "Needs your reply", className: "text-amber-400" },
+  bounced: { label: "Bounced", className: "text-red-400" },
 };
 
 export function FollowUpsContent() {
@@ -170,7 +173,8 @@ export function FollowUpsContent() {
                   </button>
                 )}
                 {(s.sequence_status === "active" ||
-                  s.sequence_status === "pending_approval") && (
+                  s.sequence_status === "pending_approval" ||
+                  s.sequence_status === "in_conversation") && (
                   <button
                     disabled={busyId === s.id}
                     onClick={() => act(s.id, "mark_responded")}
@@ -197,7 +201,7 @@ export function FollowUpsContent() {
                     Resume
                   </button>
                 )}
-                {["active", "pending_approval", "paused"].includes(
+                {["active", "pending_approval", "paused", "in_conversation", "needs_human_reply"].includes(
                   s.sequence_status
                 ) && (
                   <button
@@ -207,6 +211,16 @@ export function FollowUpsContent() {
                     title="For anyone who couldn't use the link in their email — e.g. asked by reply or phone"
                   >
                     Unsubscribe manually
+                  </button>
+                )}
+                {s.sequence_status === "needs_human_reply" && (
+                  <button
+                    disabled={busyId === s.id}
+                    onClick={() => act(s.id, "mark_handled")}
+                    className="rounded-md border border-emerald-500/40 px-2.5 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/10 disabled:opacity-40"
+                    title="Once you've replied to them yourself from your own email"
+                  >
+                    Mark handled — I replied personally
                   </button>
                 )}
               </div>

@@ -54,6 +54,7 @@ import { getDb } from "@/lib/db";
 import { getExecutor } from "./registry";
 import { getSettings } from "@/lib/models/settings";
 import { autoQualifyDueProspects } from "@/lib/models/prospects";
+import { processInboundEmail } from "@/lib/email/inboundProcessor";
 import { LOCAL_USER_ID } from "@/lib/localUser";
 import type { AgentTask } from "@/lib/types";
 
@@ -606,9 +607,52 @@ async function runAutoQualification(): Promise<void> {
   }
 }
 
+const INBOUND_EMAIL_CHECK_THROTTLE_MS = 2 * 60 * 1000;
+const INBOUND_EMAIL_LAST_CHECK_KEY = "inbound_email_last_checked_at";
+
+/**
+ * MILESTONE 3J — checking a real mailbox on every single tick (which, with
+ * QStash driving frequent ticking, could be once a minute or faster)
+ * would hammer the mail server for no benefit — replies don't arrive that
+ * often. This throttles actual IMAP checks to once every two minutes,
+ * using app_meta as a simple last-checked timestamp, while every other
+ * tick remains a fast no-op for this step.
+ */
+async function runInboundEmailCheckIfDue(): Promise<void> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `SELECT value FROM app_meta WHERE key = ?`,
+    args: [INBOUND_EMAIL_LAST_CHECK_KEY],
+  });
+
+  const lastCheckedRaw = (result.rows[0] as unknown as { value: string } | undefined)?.value;
+  const lastChecked = lastCheckedRaw ? new Date(lastCheckedRaw).getTime() : 0;
+
+  if (Date.now() - lastChecked < INBOUND_EMAIL_CHECK_THROTTLE_MS) {
+    return;
+  }
+
+  const nowIso = new Date().toISOString();
+  await db.execute({
+    sql: `
+      INSERT INTO app_meta (key, value) VALUES (?, ?)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value
+    `,
+    args: [INBOUND_EMAIL_LAST_CHECK_KEY, nowIso],
+  });
+
+  try {
+    await processInboundEmail();
+  } catch (error) {
+    console.error("[engine] Inbound email check failed:", error);
+  }
+}
+
 export async function tick(): Promise<void> {
   await recoverStaleRunningTasks();
   await runAutoQualification();
+  await runInboundEmailCheckIfDue();
 
   const tasks = await listActiveTopLevelTasks();
 

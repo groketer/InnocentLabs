@@ -110,6 +110,7 @@ export interface ListActivityOptions {
   task_id?: string;
   eventTypes?: ActivityEventType[];
   limit?: number;
+  offset?: number;
 }
 
 export async function listActivity(
@@ -139,15 +140,23 @@ export async function listActivity(
     });
   }
 
-  const limit = options.limit ?? 200;
+  // Default page size is deliberately small — this used to default to
+  // 200 with no way to page further, which rendered as one very long,
+  // seemingly endless list on the Activity page. 30 per page plus
+  // offset-based paging (see /api/activity and ActivityContent.tsx) fixes
+  // that while keeping all history genuinely reachable, not deleted.
+  const limit = options.limit ?? 30;
+  const offset = options.offset ?? 0;
   params.limit = limit;
+  params.offset = offset;
 
   const result = await db.execute({
     sql: `SELECT *
      FROM activity_events
      WHERE ${clauses.join(" AND ")}
      ORDER BY created_at DESC
-     LIMIT @limit`,
+     LIMIT @limit
+     OFFSET @offset`,
     args: params as InArgs,
   });
 

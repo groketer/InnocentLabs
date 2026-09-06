@@ -105,7 +105,10 @@ export interface Prospect {
     | "completed"
     | "unsubscribed"
     | "responded"
-    | "paused";
+    | "paused"
+    | "in_conversation"
+    | "needs_human_reply"
+    | "bounced";
   emails_sent: number;
   last_sent_at?: string;
   next_send_at?: string;
@@ -1195,16 +1198,19 @@ export async function listActiveSequences(
       SELECT *
       FROM prospects
       WHERE user_id = @user_id
-        AND sequence_status IN ('pending_approval', 'active', 'completed', 'responded', 'unsubscribed', 'paused')
+        AND sequence_status IN ('pending_approval', 'active', 'completed', 'responded', 'unsubscribed', 'paused', 'in_conversation', 'needs_human_reply', 'bounced')
       ORDER BY
         CASE sequence_status
-          WHEN 'pending_approval' THEN 0
-          WHEN 'active' THEN 1
-          WHEN 'paused' THEN 2
-          WHEN 'responded' THEN 3
-          WHEN 'completed' THEN 4
-          WHEN 'unsubscribed' THEN 5
-          ELSE 6
+          WHEN 'needs_human_reply' THEN 0
+          WHEN 'pending_approval' THEN 1
+          WHEN 'in_conversation' THEN 2
+          WHEN 'active' THEN 3
+          WHEN 'paused' THEN 4
+          WHEN 'responded' THEN 5
+          WHEN 'completed' THEN 6
+          WHEN 'bounced' THEN 7
+          WHEN 'unsubscribed' THEN 8
+          ELSE 9
         END,
         updated_at DESC
       LIMIT 200
@@ -1259,4 +1265,61 @@ export async function autoQualifyDueProspects(
   });
 
   return result.rowsAffected;
+}
+
+/**
+ * MILESTONE 3J — Inbound email.
+ *
+ * Finds a prospect by their email address (case-insensitive) — used to
+ * match an inbound reply's sender back to the prospect record it belongs
+ * to. Excludes unsubscribed prospects: if someone unsubscribed and then
+ * emails in anyway, that's still worth seeing in the inbound log, but
+ * should not be matched back into an active conversation.
+ */
+export async function getProspectByEmail(
+  userId: string,
+  email: string
+): Promise<Prospect | null> {
+  const normalizedUserId = userId.trim();
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (!normalizedUserId || !normalizedEmail) return null;
+
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      SELECT * FROM prospects
+      WHERE user_id = ?
+        AND lower(email) = ?
+      LIMIT 1
+    `,
+    args: [normalizedUserId, normalizedEmail],
+  });
+
+  const row = result.rows[0] as unknown as Record<string, unknown> | undefined;
+  return row ? mapProspectRow(row) : null;
+}
+
+/**
+ * All distinct, non-null prospect emails for a user — used by bounce
+ * detection to recognize which address in a bounce report is actually
+ * one of ours.
+ */
+export async function listAllProspectEmails(
+  userId: string
+): Promise<Set<string>> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) return new Set();
+
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `SELECT DISTINCT lower(email) as email FROM prospects WHERE user_id = ? AND email IS NOT NULL`,
+    args: [normalizedUserId],
+  });
+
+  return new Set(
+    (result.rows as unknown as Array<{ email: string }>).map((r) => r.email)
+  );
 }

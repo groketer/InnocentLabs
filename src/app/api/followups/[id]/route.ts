@@ -8,7 +8,7 @@ import { LOCAL_USER_ID } from "@/lib/localUser";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type Action = "approve" | "mark_responded" | "pause" | "resume" | "unsubscribe";
+type Action = "approve" | "mark_responded" | "pause" | "resume" | "unsubscribe" | "mark_handled";
 
 export async function PATCH(
   req: NextRequest,
@@ -79,6 +79,20 @@ export async function PATCH(
           LOCAL_USER_ID,
           params.id,
           { sequence_status: "unsubscribed", next_send_at: null }
+        );
+        return NextResponse.json({ prospect: updated });
+      }
+
+      case "mark_handled": {
+        // For a conversation the agent escalated (hostility, a
+        // commitment it couldn't make, hit the reply safety cap, etc.) —
+        // once Innocent has personally replied via his own email client,
+        // this moves it back to "in_conversation" so the agent resumes
+        // handling any further replies normally.
+        const updated = await updateProspectSequence(
+          LOCAL_USER_ID,
+          params.id,
+          { sequence_status: "in_conversation" }
         );
         return NextResponse.json({ prospect: updated });
       }

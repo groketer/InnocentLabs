@@ -191,6 +191,56 @@ export function SettingsContent() {
             </span>
           </label>
         )}
+
+        <label className="mt-3 flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={settings.autonomous_replies}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                autonomous_replies: e.target.checked,
+              })
+            }
+            className="h-4 w-4 rounded border-ink-600 bg-ink-800"
+          />
+          <span className="text-sm text-white/70">
+            Autonomous replies — read the inbox and reply to prospects who
+            write back, with no review
+          </span>
+        </label>
+        <p className="mt-1 ml-6 max-w-md text-xs text-white/30">
+          The agent still escalates specific situations to you instead of
+          replying — hostility, legal/financial commitments, explicit
+          requests for a human, or anything it can&apos;t answer
+          confidently. See Follow-ups for anything flagged this way.
+        </p>
+
+        {settings.autonomous_replies && (
+          <label className="mt-3 ml-6 block max-w-xs">
+            <span className="text-xs text-white/50">
+              Max autonomous replies per conversation ({settings.max_autonomous_replies_per_conversation})
+            </span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={settings.max_autonomous_replies_per_conversation}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  max_autonomous_replies_per_conversation: Number(e.target.value),
+                })
+              }
+              className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
+            />
+            <span className="mt-1 block text-xs text-white/30">
+              A hard safety cap — after this many back-and-forth replies
+              with one person, the conversation is flagged for you
+              regardless of how it&apos;s going.
+            </span>
+          </label>
+        )}
       </div>
 
       <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">

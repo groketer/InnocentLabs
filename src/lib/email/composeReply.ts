@@ -20,6 +20,8 @@ import OpenAI from "openai";
 import type { Prospect } from "@/lib/models/prospects";
 import type { Product } from "@/lib/types";
 import type { EmailSend } from "@/lib/models/emailSends";
+import { recordApiUsage } from "@/lib/models/apiUsage";
+import { LOCAL_USER_ID } from "@/lib/localUser";
 
 const MODEL = "gpt-4.1-mini";
 
@@ -86,6 +88,13 @@ or
 
 DO NOT INCLUDE a signature, sign-off name, postal address, or unsubscribe
 text in "body" — those are appended automatically.
+
+IF YOU DO INCLUDE ANY CLOSING LINE ANYWAY (e.g. "Best regards,"):
+This has gone wrong before — a placeholder like "[Your Name]" was sent to
+a real person. If a closing appears at all, it must be signed with the
+exact name "Innocent Mwangi" — never a placeholder, never any other name,
+never left blank. But the strong preference is still to omit a closing
+entirely.
 `.trim();
 
 export interface ComposeReplyInput {
@@ -193,6 +202,16 @@ export async function composeReply(
     ],
     temperature: 0.5,
   });
+
+  if (completion.usage) {
+    await recordApiUsage({
+      user_id: LOCAL_USER_ID,
+      source: "reply_compose",
+      model: MODEL,
+      input_tokens: completion.usage.prompt_tokens,
+      output_tokens: completion.usage.completion_tokens,
+    });
+  }
 
   const raw = completion.choices[0]?.message?.content;
 

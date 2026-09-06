@@ -96,6 +96,23 @@ export function appendComplianceFooter(
   return `${body}\n${footerLines.join("\n")}`;
 }
 
+/**
+ * Hard, code-level backstop for a real incident: a composer generated
+ * "Best regards, [Your Name]" and it was actually sent to a real person.
+ * The prompt-level fix (both composers now explicitly say to always sign
+ * as "Innocent Mwangi" if a closing appears at all) should prevent this,
+ * but a prompt instruction is never a 100% guarantee — this catches the
+ * literal placeholder pattern regardless and fixes it unconditionally, so
+ * this specific failure mode cannot recur even if a future prompt change
+ * accidentally weakens the instruction above.
+ */
+const NAME_PLACEHOLDER_PATTERN = /\[(your name|sender name|name)\]/gi;
+const SENDER_DISPLAY_NAME = "Innocent Mwangi";
+
+export function fixNamePlaceholders(body: string): string {
+  return body.replace(NAME_PLACEHOLDER_PATTERN, SENDER_DISPLAY_NAME);
+}
+
 let cachedTransporter: ReturnType<typeof nodemailer.createTransport> | null = null;
 
 function getTransporter() {
@@ -136,7 +153,10 @@ export async function sendEmail(
 
   let finalBody: string;
   try {
-    finalBody = appendComplianceFooter(input.body, input.unsubscribeToken);
+    finalBody = appendComplianceFooter(
+      fixNamePlaceholders(input.body),
+      input.unsubscribeToken
+    );
   } catch (error) {
     return {
       success: false,

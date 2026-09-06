@@ -3,6 +3,7 @@ import { ensureDailyPortfolioRefresh } from "@/lib/taskEngine/portfolioScheduler
 import { ensureDailyProspectingTask } from "@/lib/taskEngine/prospectingScheduler";
 import { ensureDailyEmailCampaignTask } from "@/lib/taskEngine/emailCampaignScheduler";
 import { ensureDailyAuditTask } from "@/lib/taskEngine/auditScheduler";
+import { sendDailyDigestIfDue } from "@/lib/taskEngine/digestScheduler";
 import { tick } from "@/lib/taskEngine/engine";
 import { listActiveTopLevelTasks } from "@/lib/models/tasks";
 
@@ -62,6 +63,7 @@ export async function GET(req: NextRequest) {
     await ensureDailyAuditTask();
     await ensureDailyProspectingTask();
     await ensureDailyEmailCampaignTask();
+    await sendDailyDigestIfDue();
 
     const deadline = Date.now() + TICK_LOOP_BUDGET_MS;
     let ticks = 0;

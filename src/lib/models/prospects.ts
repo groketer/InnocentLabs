@@ -1323,3 +1323,39 @@ export async function listAllProspectEmails(
     (result.rows as unknown as Array<{ email: string }>).map((r) => r.email)
   );
 }
+
+/**
+ * MILESTONE 3L — improvement #5: safer, wider reply matching.
+ *
+ * Finds a prospect whose stored email is on the given domain — used to
+ * flag a "possible match" when someone replies from a different address
+ * than the one on file (e.g. a personal Gmail instead of their work
+ * email). Deliberately just a signal for a person to review, never used
+ * to auto-link a reply to a conversation: matching the wrong person's
+ * domain and having the AI reply as if continuing THEIR conversation
+ * would be a real, meaningful mistake, worse than just missing the
+ * message entirely.
+ */
+export async function findProspectByDomain(
+  userId: string,
+  domain: string
+): Promise<Prospect | null> {
+  const normalizedUserId = userId.trim();
+  const normalizedDomain = domain.trim().toLowerCase();
+  if (!normalizedUserId || !normalizedDomain) return null;
+
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      SELECT * FROM prospects
+      WHERE user_id = ?
+        AND lower(email) LIKE ?
+      LIMIT 1
+    `,
+    args: [normalizedUserId, `%@${normalizedDomain}`],
+  });
+
+  const row = result.rows[0] as unknown as Record<string, unknown> | undefined;
+  return row ? mapProspectRow(row) : null;
+}

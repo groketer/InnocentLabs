@@ -83,6 +83,8 @@ import type { AgentTask } from "@/lib/types";
 import type { StepResult, SubtaskPlanItem, TaskExecutor } from "../types";
 
 import { getDb } from "@/lib/db";
+import { recordApiUsage } from "@/lib/models/apiUsage";
+import { LOCAL_USER_ID } from "@/lib/localUser";
 
 import {
   getProductByName,
@@ -942,6 +944,14 @@ JSON object.
             LIVE_PORTFOLIO_REFRESH_MAX_TURNS,
         }
       );
+
+    await recordApiUsage({
+      user_id: LOCAL_USER_ID,
+      source: "portfolio_refresh",
+      model: MODEL,
+      input_tokens: result.state.usage.inputTokens,
+      output_tokens: result.state.usage.outputTokens,
+    });
 
     const raw =
       result.finalOutput;
@@ -2579,6 +2589,14 @@ Do not return explanatory prose outside the JSON object.
               MAX_TURNS,
           }
         );
+
+      await recordApiUsage({
+        user_id: parent.user_id,
+        source: "prospecting",
+        model: MODEL,
+        input_tokens: result.state.usage.inputTokens,
+        output_tokens: result.state.usage.outputTokens,
+      });
 
       const rawOutput =
         result.finalOutput;

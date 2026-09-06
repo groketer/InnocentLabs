@@ -44,9 +44,16 @@ function StatBlock({
   return content;
 }
 
+interface UsageSummary {
+  cost_today: number;
+  cost_this_month: number;
+  calls_today: number;
+}
+
 export function DashboardContent() {
   const [tasks, setTasks] = useState<AgentTask[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,16 +61,19 @@ export function DashboardContent() {
 
     async function load() {
       try {
-        const [tasksRes, statsRes] = await Promise.all([
+        const [tasksRes, statsRes, usageRes] = await Promise.all([
           fetch("/api/tasks?topLevelOnly=true&limit=20"),
           fetch("/api/stats"),
+          fetch("/api/usage"),
         ]);
         const tasksData = await tasksRes.json();
         const statsData = await statsRes.json();
+        const usageData = await usageRes.json();
         if (!tasksRes.ok) throw new Error(tasksData?.error || "Could not load tasks.");
         if (!cancelled) {
           setTasks(tasksData.tasks);
           if (statsRes.ok) setStats(statsData.stats);
+          if (usageRes.ok) setUsage(usageData.usage);
         }
       } catch (err) {
         if (!cancelled) {
@@ -117,6 +127,16 @@ export function DashboardContent() {
           />
           <StatBlock value={stats.emails_sent_today} label="Sent today" />
         </div>
+      )}
+
+      {usage && (
+        <p className="mt-3 text-xs text-white/30">
+          Estimated OpenAI cost: ${usage.cost_today.toFixed(3)} today
+          {" · "}
+          ${usage.cost_this_month.toFixed(2)} this month
+          {" · "}
+          {usage.calls_today} call{usage.calls_today === 1 ? "" : "s"} today
+        </p>
       )}
 
       <section className="mt-8">

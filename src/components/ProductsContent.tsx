@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { formatTimestamp } from "@/lib/format";
 import type { Product } from "@/lib/types";
+import type { ProductInsight } from "@/lib/models/insights";
 
 export function ProductsContent() {
   const [products, setProducts] = useState<Product[] | null>(null);
+  const [insights, setInsights] = useState<Record<string, ProductInsight>>({});
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -13,12 +15,23 @@ export function ProductsContent() {
 
   async function load() {
     try {
-      const res = await fetch("/api/products");
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Could not load products.");
+      const [productsRes, insightsRes] = await Promise.all([
+        fetch("/api/products"),
+        fetch("/api/insights"),
+      ]);
+      const data = await productsRes.json();
+      const insightsData = await insightsRes.json();
+      if (!productsRes.ok) throw new Error(data?.error || "Could not load products.");
       setProducts(
         (data.products as Product[]).filter((p) => p.asset_type === "product")
       );
+      if (insightsRes.ok) {
+        const map: Record<string, ProductInsight> = {};
+        for (const i of insightsData.insights as ProductInsight[]) {
+          map[i.product_id] = i;
+        }
+        setInsights(map);
+      }
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load products.");
@@ -149,6 +162,26 @@ export function ProductsContent() {
                   <span>{Math.round(p.confidence * 100)}% confidence</span>
                 )}
               </div>
+
+              {insights[p.id] && insights[p.id].prospects_found > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-white/[0.02] px-3 py-2 text-xs text-white/50">
+                  <span>{insights[p.id].prospects_found} found</span>
+                  <span>→</span>
+                  <span>{insights[p.id].qualified} qualified</span>
+                  <span>→</span>
+                  <span>{insights[p.id].emailed} emailed</span>
+                  <span>→</span>
+                  <span className={insights[p.id].replied > 0 ? "text-emerald-400" : ""}>
+                    {insights[p.id].replied} replied
+                  </span>
+                  {insights[p.id].bounced > 0 && (
+                    <span className="text-red-400">{insights[p.id].bounced} bounced</span>
+                  )}
+                  {insights[p.id].unsubscribed > 0 && (
+                    <span className="text-white/30">{insights[p.id].unsubscribed} unsubscribed</span>
+                  )}
+                </div>
+              )}
 
               <div className="mt-3">
                 <textarea

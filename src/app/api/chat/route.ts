@@ -5,6 +5,7 @@ import { loadKnowledgeBase } from "@/lib/knowledge";
 import { LOCAL_USER_ID } from "@/lib/localUser";
 import type { AgentRunContext } from "@/agents/context";
 import { listChatMessages, saveChatMessage } from "@/lib/models/chat";
+import { recordApiUsage } from "@/lib/models/apiUsage";
 
 // This route must run on Node.js (not the Edge runtime) because it reads
 // knowledge files from the filesystem, talks to the OpenAI API, and (via
@@ -104,6 +105,15 @@ export async function POST(req: NextRequest) {
       conversationId,
     };
     const result = await run(agent, input, { context });
+
+    await recordApiUsage({
+      user_id: LOCAL_USER_ID,
+      source: "chat",
+      // masterAgent.ts's MODEL constant isn't exported; kept in sync manually.
+      model: "gpt-4.1-mini",
+      input_tokens: result.state.usage.inputTokens,
+      output_tokens: result.state.usage.outputTokens,
+    });
 
     // Surface any tasks the agent actually created during this turn, so
     // the UI can render a real, linked task card instead of just text.

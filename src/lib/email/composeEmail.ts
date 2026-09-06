@@ -31,6 +31,8 @@ import { Agent, run, webSearchTool } from "@openai/agents";
 import type { Prospect } from "@/lib/models/prospects";
 import type { Product } from "@/lib/types";
 import type { EmailSend } from "@/lib/models/emailSends";
+import { recordApiUsage } from "@/lib/models/apiUsage";
+import { LOCAL_USER_ID } from "@/lib/localUser";
 
 const MODEL = "gpt-4.1-mini";
 const MAX_TURNS = 4;
@@ -104,6 +106,13 @@ DO NOT INCLUDE:
 - a signature, sign-off name, company postal address, or unsubscribe text —
   these are appended separately and automatically; adding your own would
   duplicate them.
+
+IF YOU DO INCLUDE ANY CLOSING LINE ANYWAY (e.g. "Best regards,"):
+This has gone wrong before — a placeholder like "[Your Name]" was sent to
+a real person. If a closing appears at all, it must be signed with the
+exact name "Innocent Mwangi" — never a placeholder, never any other name,
+never left blank. But the strong preference is still to omit a closing
+entirely per the rule above.
 
 OUTPUT FORMAT:
 Respond with ONLY a JSON object, no markdown fences, no extra commentary,
@@ -239,6 +248,15 @@ export async function composeOutreachEmail(
 
   const result = await run(agent, buildUserPrompt(input), {
     maxTurns: MAX_TURNS,
+  });
+
+  const usage = result.state.usage;
+  await recordApiUsage({
+    user_id: LOCAL_USER_ID,
+    source: "email_compose",
+    model: MODEL,
+    input_tokens: usage.inputTokens,
+    output_tokens: usage.outputTokens,
   });
 
   const raw = result.finalOutput;

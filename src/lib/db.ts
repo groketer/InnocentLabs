@@ -648,6 +648,37 @@ async function runMigrations(db: Db): Promise<void> {
     ON prospects (user_id, product_id, lower(email))
     WHERE email IS NOT NULL
   `);
+
+  /*
+   * MILESTONE 3L — cost visibility.
+   *
+   * The system now runs five separate AI-driven jobs continuously and
+   * autonomously (prospecting, auditing, qualification's own reasoning is
+   * free/local but the others aren't, campaigns, replies). There was no
+   * visibility anywhere into what that actually costs. One row per OpenAI
+   * call, everywhere one is made.
+   */
+  await db.batch(
+    [
+      {
+        sql: `CREATE TABLE IF NOT EXISTS api_usage (
+          id             TEXT PRIMARY KEY,
+          user_id        TEXT NOT NULL,
+          source         TEXT NOT NULL,
+          model          TEXT NOT NULL,
+          input_tokens   INTEGER NOT NULL,
+          output_tokens  INTEGER NOT NULL,
+          estimated_cost_usd REAL NOT NULL,
+          created_at     TEXT NOT NULL DEFAULT (${NOW_ISO_SQL})
+        )`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_api_usage_user_created
+          ON api_usage(user_id, created_at)`,
+      },
+    ],
+    "write"
+  );
 }
 
 /**

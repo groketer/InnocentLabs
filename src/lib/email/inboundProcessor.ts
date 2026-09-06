@@ -22,10 +22,13 @@ import { fetchUnseenMessages, isImapConfigured } from "./imapClient";
 import { looksLikeBounce, extractBouncedAddress } from "./bounceDetection";
 import { composeReply } from "./composeReply";
 import { sendEmail } from "./sendEmail";
+import { notifyOwner } from "./notifyOwner";
 import {
   getProspectByEmail,
   listAllProspectEmails,
   updateProspectSequence,
+  findProspectByDomain,
+  type Prospect,
 } from "@/lib/models/prospects";
 import { getProductById } from "@/lib/models/products";
 import {
@@ -38,6 +41,37 @@ import { recordInboundEmail } from "@/lib/models/inboundEmails";
 import { logActivity } from "@/lib/models/activity";
 import { getSettings } from "@/lib/models/settings";
 import { LOCAL_USER_ID } from "@/lib/localUser";
+
+/**
+ * MILESTONE 3L — improvement #3: escalation notifications.
+ *
+ * needs_human_reply is the one status in this whole system that's
+ * designed to need Innocent's timely attention — everything else here is
+ * genuinely autonomous. Without this, it just sat quietly in Follow-ups
+ * until he happened to check. This is the single choke point every
+ * escalation path below goes through, so the notification can never be
+ * forgotten at one call site and not another.
+ */
+async function escalateToHuman(
+  prospect: Prospect,
+  reason: string
+): Promise<void> {
+  await updateProspectSequence(LOCAL_USER_ID, prospect.id, {
+    sequence_status: "needs_human_reply",
+  });
+
+  await logActivity({
+    user_id: LOCAL_USER_ID,
+    task_id: null,
+    event_type: "TASK_NEEDS_INPUT",
+    message: `${prospect.name} needs your personal reply: ${reason}`,
+  });
+
+  await notifyOwner(
+    `${prospect.name} needs your reply`,
+    `${prospect.name}${prospect.organization ? ` (${prospect.organization})` : ""} needs your personal attention:\n\n${reason}\n\nOpen Follow-ups in the app to see the full conversation and respond.`
+  );
+}
 
 /**
  * Checks the inbox once and processes everything currently unread.
@@ -141,6 +175,18 @@ async function processOneMessage(
   const prospect = await getProspectByEmail(LOCAL_USER_ID, message.fromAddress);
 
   if (!prospect) {
+    // MILESTONE 3L — improvement #5: don't just silently lose this. If
+    // the sender's domain matches a known prospect's domain (e.g. they
+    // replied from a personal address instead of the one on file), flag
+    // it as a possible match for a person to review — never auto-link,
+    // since sending an autonomous reply into the wrong person's
+    // conversation context is a real, meaningful risk, and this is
+    // exactly the situation where getting it wrong would be worst.
+    const senderDomain = message.fromAddress.split("@")[1]?.toLowerCase();
+    const possibleMatch = senderDomain
+      ? await findProspectByDomain(LOCAL_USER_ID, senderDomain)
+      : null;
+
     await recordInboundEmail({
       user_id: LOCAL_USER_ID,
       message_id: message.messageId,
@@ -149,7 +195,9 @@ async function processOneMessage(
       body: message.text,
       classification: "unmatched",
       handled: "skipped",
-      note: "Sender does not match any known prospect.",
+      note: possibleMatch
+        ? `Sender does not match any known prospect exactly, but the domain matches ${possibleMatch.name} (${possibleMatch.email}) — possibly the same person replying from a different address. Not auto-linked; review manually.`
+        : "Sender does not match any known prospect.",
     });
     return;
   }
@@ -175,9 +223,10 @@ async function processOneMessage(
   // otherwise decide, to prevent a runaway back-and-forth.
   const replyCount = await countRepliesForProspect(prospect.id);
   if (replyCount >= settings.max_autonomous_replies_per_conversation) {
-    await updateProspectSequence(LOCAL_USER_ID, prospect.id, {
-      sequence_status: "needs_human_reply",
-    });
+    await escalateToHuman(
+      prospect,
+      `Reached the ${settings.max_autonomous_replies_per_conversation}-reply safety cap for one conversation.`
+    );
     await recordInboundEmail({
       user_id: LOCAL_USER_ID,
       prospect_id: prospect.id,
@@ -188,12 +237,6 @@ async function processOneMessage(
       classification: "reply",
       handled: "escalated",
       note: `Reached the ${settings.max_autonomous_replies_per_conversation}-reply safety cap for one conversation — flagged for Innocent.`,
-    });
-    await logActivity({
-      user_id: LOCAL_USER_ID,
-      task_id: null,
-      event_type: "TASK_NEEDS_INPUT",
-      message: `${prospect.name}'s conversation reached the autonomous-reply safety cap — needs your reply.`,
     });
     return;
   }
@@ -216,9 +259,8 @@ async function processOneMessage(
     // Composition failure is treated the same as escalation — never leave
     // someone's reply completely unaddressed just because generation
     // failed once.
-    await updateProspectSequence(LOCAL_USER_ID, prospect.id, {
-      sequence_status: "needs_human_reply",
-    });
+    const reason = `Could not compose a reply automatically: ${error instanceof Error ? error.message : "unknown error"}.`;
+    await escalateToHuman(prospect, reason);
     await recordInboundEmail({
       user_id: LOCAL_USER_ID,
       prospect_id: prospect.id,
@@ -228,15 +270,13 @@ async function processOneMessage(
       body: message.text,
       classification: "reply",
       handled: "escalated",
-      note: `Could not compose a reply automatically: ${error instanceof Error ? error.message : "unknown error"}.`,
+      note: reason,
     });
     return;
   }
 
   if (decision.action === "escalate") {
-    await updateProspectSequence(LOCAL_USER_ID, prospect.id, {
-      sequence_status: "needs_human_reply",
-    });
+    await escalateToHuman(prospect, decision.reason);
     await recordInboundEmail({
       user_id: LOCAL_USER_ID,
       prospect_id: prospect.id,
@@ -248,12 +288,6 @@ async function processOneMessage(
       handled: "escalated",
       note: decision.reason,
     });
-    await logActivity({
-      user_id: LOCAL_USER_ID,
-      task_id: null,
-      event_type: "TASK_NEEDS_INPUT",
-      message: `${prospect.name} needs your personal reply: ${decision.reason}`,
-    });
     return;
   }
 
@@ -264,9 +298,8 @@ async function processOneMessage(
   if (!unsubscribeToken) {
     // Shouldn't normally happen (a prospect who's received outreach
     // already has one), but never send without a working unsubscribe link.
-    await updateProspectSequence(LOCAL_USER_ID, prospect.id, {
-      sequence_status: "needs_human_reply",
-    });
+    const reason = "Prospect has no unsubscribe token on file — cannot send a compliant reply automatically.";
+    await escalateToHuman(prospect, reason);
     await recordInboundEmail({
       user_id: LOCAL_USER_ID,
       prospect_id: prospect.id,
@@ -276,7 +309,7 @@ async function processOneMessage(
       body: message.text,
       classification: "reply",
       handled: "escalated",
-      note: "Prospect has no unsubscribe token on file — cannot send a compliant reply automatically.",
+      note: reason,
     });
     return;
   }
@@ -326,8 +359,9 @@ async function processOneMessage(
       message: `Replied to ${prospect.name} automatically.`,
     });
   } else {
-    await updateProspectSequence(LOCAL_USER_ID, prospect.id, {
-      sequence_status: "needs_human_reply",
-    });
+    await escalateToHuman(
+      prospect,
+      `The reply failed to send: ${sendResult.errorMessage ?? "unknown error"}.`
+    );
   }
 }

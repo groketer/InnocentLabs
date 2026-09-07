@@ -81,6 +81,8 @@ export interface Prospect {
 
   website?: string;
   public_profile_url?: string;
+  /** The prospect's own country, when known — see src/lib/timezones.ts for how this drives send timing. */
+  country?: string;
 
   product_id?: string;
   fit_reason?: string;
@@ -149,6 +151,7 @@ export interface CreateProspectInput {
 
   website?: string;
   public_profile_url?: string;
+  country?: string;
 
   product_id?: string;
   fit_reason?: string;
@@ -460,6 +463,12 @@ function mapProspectRow(
         MAX_TEXT_LENGTH
       ),
 
+    country:
+      optionalString(
+        row.country,
+        200
+      ),
+
     public_profile_url:
       optionalString(
         row.public_profile_url,
@@ -684,6 +693,7 @@ if (
         qualification_status,
         website,
         public_profile_url,
+        country,
         product_id,
         fit_reason,
         opportunity_signal,
@@ -703,6 +713,7 @@ if (
         @qualification_status,
         @website,
         @public_profile_url,
+        @country,
         @product_id,
         @fit_reason,
         @opportunity_signal,
@@ -755,6 +766,12 @@ if (
         optionalString(
           input.public_profile_url,
           MAX_TEXT_LENGTH
+        ) ?? null,
+
+      country:
+        optionalString(
+          input.country,
+          200
         ) ?? null,
 
       product_id:

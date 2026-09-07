@@ -695,6 +695,20 @@ async function runMigrations(db: Db): Promise<void> {
   if (!productsColumns.has("geographic_focus")) {
     await db.execute(`ALTER TABLE products ADD COLUMN geographic_focus TEXT`);
   }
+
+  /*
+   * MILESTONE 3R — international-timezone-aware sending.
+   *
+   * The prospect's own country, when known — used to send during THEIR
+   * business hours rather than the sender's, or a single fixed window.
+   * A person in Nairobi and a person in Toronto shouldn't be emailed at
+   * the same wall-clock time just because both emails went out from the
+   * same sending account.
+   */
+  const prospectsColumns = await existingColumns("prospects");
+  if (!prospectsColumns.has("country")) {
+    await db.execute(`ALTER TABLE prospects ADD COLUMN country TEXT`);
+  }
 }
 
 /**

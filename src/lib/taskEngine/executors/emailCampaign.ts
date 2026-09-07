@@ -35,8 +35,15 @@ import {
 import { getSettings } from "@/lib/models/settings";
 import { composeOutreachEmail } from "@/lib/email/composeEmail";
 import { sendEmail } from "@/lib/email/sendEmail";
+import { isBusinessHoursFor } from "@/lib/timezones";
 
 const MAX_BATCH_PER_TASK = 50;
+// Fetch a larger candidate pool than the batch size before filtering by
+// business hours, so a run that happens to land when many prospects'
+// countries are asleep doesn't artificially under-fill the batch — there
+// may be plenty of OTHER due prospects, in different timezones, who are
+// actually awake right now.
+const CANDIDATE_POOL_MULTIPLIER = 4;
 
 function nowIso() {
   return new Date().toISOString();
@@ -54,11 +61,21 @@ export const emailCampaignExecutor: TaskExecutor = {
       return [];
     }
 
-    const due = await listProspectsDueForOutreach(
+    const batchSize = Math.min(remainingBudget, MAX_BATCH_PER_TASK);
+
+    const candidates = await listProspectsDueForOutreach(
       task.user_id,
-      Math.min(remainingBudget, MAX_BATCH_PER_TASK),
+      batchSize * CANDIDATE_POOL_MULTIPLIER,
       !settings.require_manual_approval
     );
+
+    // MILESTONE 3R — international-timezone-aware sending. A prospect
+    // with no known country falls back to "always eligible" (see
+    // isBusinessHoursFor) rather than being permanently blocked by a
+    // safeguard that has nothing to check against.
+    const due = candidates
+      .filter((p) => isBusinessHoursFor(p.country))
+      .slice(0, batchSize);
 
     return due.map((prospect) => ({
       title: `Email ${prospect.name}`,
@@ -112,6 +129,20 @@ export const emailCampaignExecutor: TaskExecutor = {
         success: true,
         summary: `Skipped — sequence is now "${prospect.sequence_status}".`,
         resultData: { skipped: true, reason: prospect.sequence_status },
+      };
+    }
+
+    // MILESTONE 3R — re-check business hours at actual send time, not
+    // just at planning time. A subtask can sit queued behind others for a
+    // while; by the time it's this one's turn, the window that was open
+    // when planSubtasks ran may have just closed for this prospect's
+    // country. Not a failure — this prospect is simply picked up again
+    // whenever the next campaign run happens to catch their business hours.
+    if (!isBusinessHoursFor(prospect.country)) {
+      return {
+        success: true,
+        summary: `Skipped — outside business hours for ${prospect.name}'s country (${prospect.country ?? "unknown"}) right now.`,
+        resultData: { skipped: true, reason: "outside_business_hours" },
       };
     }
 

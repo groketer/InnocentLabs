@@ -187,6 +187,8 @@ interface ProspectCandidate {
 
   public_profile_url?: string;
 
+  country?: string;
+
   fit_reason?: string;
 
   opportunity_signal?: string;
@@ -283,6 +285,13 @@ const ProspectCandidateSchema = z.object({
   website: z.string().optional(),
 
   public_profile_url: z.string().optional(),
+
+  country: z
+    .string()
+    .optional()
+    .describe(
+      "The country this prospect is actually based in, when it can be determined from real evidence (their website, address, phone country code, etc.) — used to send at a reasonable local time, not guessed if genuinely unclear."
+    ),
 
   fit_reason: z.string(),
 
@@ -1603,6 +1612,25 @@ Examples:
 Unknown information must remain unknown.
 
 ==================================================
+COUNTRY (for send-timing purposes)
+==================================================
+
+When you can genuinely determine the prospect's country from real
+evidence — their office address, phone country code, a ".co.ke" or
+similar country-coded domain, an explicit "based in X" statement, or
+similar — record it in "country" using the country's common English name
+(e.g. "Kenya", "United States", "United Kingdom"). This is used only to
+send emails at a reasonable local time for them, not to make any claim
+about the business itself.
+
+If you cannot genuinely determine the country from real evidence, leave
+it unset. Do not guess from a name, a ".com" domain, or general
+impression — an ordinary ".com" address gives no real signal about
+location, and a wrong guess here would mean emailing someone at a bad
+time for a country they aren't even in. Absence of this field is fine
+and common; a confident wrong guess is worse than leaving it blank.
+
+==================================================
 OUTPUT FORMAT
 ==================================================
 
@@ -2163,6 +2191,9 @@ function normalizeCandidate(
 
     public_profile_url:
       publicProfileUrl,
+
+    country:
+      candidate.country,
 
     fit_reason:
       fitReason,
@@ -2796,6 +2827,9 @@ Do not return explanatory prose outside the JSON object.
 
               public_profile_url:
                 candidate.public_profile_url,
+
+              country:
+                candidate.country,
 
               /**
                * NEVER use a product ID supplied by the model.

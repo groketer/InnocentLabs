@@ -232,6 +232,10 @@ IMPORTANT:
         description: product.description,
         future_url: product.future_url,
         notes: product.notes,
+        geographic_focus: product.geographic_focus,
+        supplementary_knowledge: product.supplementary_knowledge,
+        campaign_paused: product.campaign_paused,
+        approval_status: product.approval_status,
       },
 
       intelligence_record: {

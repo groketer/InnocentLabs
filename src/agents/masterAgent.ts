@@ -33,6 +33,10 @@ import { getProspectsTool } from "./tools/getProspectsTool";
 import { getFollowUpsStatusTool } from "./tools/getFollowUpsStatusTool";
 import { getSettingsTool } from "./tools/getSettingsTool";
 import { listProductsTool } from "./tools/listProductsTool";
+import { getActivitySummaryTool } from "./tools/getActivitySummaryTool";
+import { getUsageSummaryTool } from "./tools/getUsageSummaryTool";
+import { getProductInsightsTool } from "./tools/getProductInsightsTool";
+import { searchProductDocumentsTool } from "./tools/searchProductDocumentsTool";
 
 const MODEL = "gpt-4.1-mini";
 
@@ -543,6 +547,10 @@ tools: [
   getFollowUpsStatusTool,
   getSettingsTool,
   listProductsTool,
+  getActivitySummaryTool,
+  getUsageSummaryTool,
+  getProductInsightsTool,
+  searchProductDocumentsTool,
   webSearchTool({ searchContextSize: "medium" }),
 ],
 

@@ -1142,20 +1142,22 @@ export async function listProspectsDueForOutreach(
 
   const result = await db.execute({
     sql: `
-      SELECT *
+      SELECT prospects.*
       FROM prospects
-      WHERE user_id = @user_id
-        AND qualification_status = 'qualified'
-        AND email IS NOT NULL
+      LEFT JOIN products ON products.id = prospects.product_id
+      WHERE prospects.user_id = @user_id
+        AND prospects.qualification_status = 'qualified'
+        AND prospects.email IS NOT NULL
+        AND (products.campaign_paused IS NULL OR products.campaign_paused = false)
         AND (
-          sequence_status = 'not_started'
-          OR (sequence_status = 'active' AND next_send_at IS NOT NULL AND next_send_at <= @now)
-          OR (@include_pending_approval AND sequence_status = 'pending_approval')
+          prospects.sequence_status = 'not_started'
+          OR (prospects.sequence_status = 'active' AND prospects.next_send_at IS NOT NULL AND prospects.next_send_at <= @now)
+          OR (@include_pending_approval AND prospects.sequence_status = 'pending_approval')
         )
       ORDER BY
-        CASE WHEN sequence_status = 'active' THEN 0 ELSE 1 END,
-        next_send_at ASC NULLS FIRST,
-        created_at ASC
+        CASE WHEN prospects.sequence_status = 'active' THEN 0 ELSE 1 END,
+        prospects.next_send_at ASC NULLS FIRST,
+        prospects.created_at ASC
       LIMIT @limit
     `,
     args: {

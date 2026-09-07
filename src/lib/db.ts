@@ -709,6 +709,22 @@ async function runMigrations(db: Db): Promise<void> {
   if (!prospectsColumns.has("country")) {
     await db.execute(`ALTER TABLE prospects ADD COLUMN country TEXT`);
   }
+
+  /*
+   * MILESTONE 3T — per-product campaign focus.
+   *
+   * Separate from `products.status` (the product's own business
+   * status — active/discontinued/etc, sourced from the live marketplace
+   * refresh) — this is purely a user preference about whether outreach
+   * SENDING should currently include this product, independent of
+   * prospecting (which keeps running for every product regardless, so
+   * the pipeline is always full when focus shifts).
+   */
+  if (!productsColumns.has("campaign_paused")) {
+    await db.execute(
+      `ALTER TABLE products ADD COLUMN campaign_paused BOOLEAN NOT NULL DEFAULT false`
+    );
+  }
 }
 
 /**

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updateProductNotes, updateProductGeographicFocus } from "@/lib/models/products";
+import {
+  updateProductNotes,
+  updateProductGeographicFocus,
+  updateProductCampaignPaused,
+} from "@/lib/models/products";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,19 +15,26 @@ export async function PATCH(
   try {
     const body = await req.json();
 
-    if (typeof body?.notes !== "string" && typeof body?.geographic_focus !== "string") {
+    const hasNotes = typeof body?.notes === "string";
+    const hasGeo = typeof body?.geographic_focus === "string";
+    const hasPaused = typeof body?.campaign_paused === "boolean";
+
+    if (!hasNotes && !hasGeo && !hasPaused) {
       return NextResponse.json(
-        { error: "notes or geographic_focus (string) is required." },
+        { error: "notes, geographic_focus, or campaign_paused is required." },
         { status: 400 }
       );
     }
 
     let product;
-    if (typeof body?.notes === "string") {
+    if (hasNotes) {
       product = await updateProductNotes(params.id, body.notes);
     }
-    if (typeof body?.geographic_focus === "string") {
+    if (hasGeo) {
       product = await updateProductGeographicFocus(params.id, body.geographic_focus);
+    }
+    if (hasPaused) {
+      product = await updateProductCampaignPaused(params.id, body.campaign_paused);
     }
 
     return NextResponse.json({ product });

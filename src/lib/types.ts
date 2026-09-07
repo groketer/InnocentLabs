@@ -148,6 +148,7 @@ export interface Product {
   unknowns: string | null;
   confidence: number | null;
   geographic_focus: string | null;
+  campaign_paused: boolean;
   last_audited_at: string | null;
   created_at: string;
   updated_at: string;

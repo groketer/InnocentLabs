@@ -789,6 +789,49 @@ export async function updateProductNotes(
 }
 
 /**
+ * MILESTONE 3T — per-product campaign focus.
+ *
+ * Toggles whether outreach SENDING should currently include this
+ * product. Prospecting is deliberately unaffected — it keeps running for
+ * every product regardless, so the pipeline stays full and ready to go
+ * the moment focus shifts to a different product, rather than needing to
+ * "catch up" from a cold start.
+ */
+export async function updateProductCampaignPaused(
+  id: string,
+  paused: boolean
+): Promise<Product> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      UPDATE products
+      SET campaign_paused = @paused, updated_at = ${NOW_ISO_SQL}
+      WHERE id = @id
+    `,
+    args: { id, paused },
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Product not found.");
+  }
+
+  const result2 = await db.execute({
+    sql: `SELECT * FROM products WHERE id = ?`,
+    args: [id],
+  });
+
+  const product = result2.rows[0] as unknown as Product | undefined;
+
+  if (!product) {
+    throw new Error("Product was updated but could not be retrieved afterward.");
+  }
+
+  return product;
+}
+
+
+/**
  * MILESTONE 3O — geographic targeting per product.
  *
  * A free-text instruction (e.g. "Kenya first, then Eastern Africa as a

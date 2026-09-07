@@ -98,6 +98,24 @@ export function ProductsContent() {
     }
   }
 
+  async function toggleCampaignPaused(id: string, paused: boolean) {
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/products/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaign_paused: paused }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not update campaign status.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update campaign status.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -147,6 +165,11 @@ export function ProductsContent() {
                     {p.status !== "active" && (
                       <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-400">
                         {p.status}
+                      </span>
+                    )}
+                    {p.campaign_paused && (
+                      <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-400">
+                        Campaign paused
                       </span>
                     )}
                   </div>
@@ -292,6 +315,18 @@ export function ProductsContent() {
                   className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
                 >
                   Prospect now
+                </button>
+                <button
+                  disabled={busyId === p.id}
+                  onClick={() => toggleCampaignPaused(p.id, !p.campaign_paused)}
+                  className={`rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-40 ${
+                    p.campaign_paused
+                      ? "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                      : "border-ink-600 text-white/60 hover:border-amber-500/40 hover:text-amber-300"
+                  }`}
+                  title="Prospecting always continues regardless — this only affects whether outreach emails go out for this product"
+                >
+                  {p.campaign_paused ? "Resume campaign sending" : "Pause campaign sending"}
                 </button>
               </div>
             </div>

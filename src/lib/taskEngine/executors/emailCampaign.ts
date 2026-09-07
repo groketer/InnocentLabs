@@ -218,6 +218,7 @@ export const emailCampaignExecutor: TaskExecutor = {
       subject: composed.subject,
       body: composed.body,
       unsubscribeToken,
+      recipientName: prospect.prospect_type === "person" ? prospect.name : undefined,
     });
 
     await recordEmailSend({

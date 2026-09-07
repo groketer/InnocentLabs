@@ -25,6 +25,14 @@ export interface SendEmailInput {
   body: string;
   unsubscribeToken: string;
   /**
+   * The prospect's actual name, if known — used by the placeholder
+   * backstop below to fix a greeting the composer left as a literal
+   * bracketed placeholder instead of either the real name or a generic
+   * greeting. Optional because not every send has a clearly known
+   * individual (an organization-only prospect has no personal name).
+   */
+  recipientName?: string;
+  /**
    * For a reply: the Message-ID of the email being replied to, so it
    * threads correctly in the recipient's inbox instead of showing up as
    * an unrelated new message.
@@ -97,20 +105,69 @@ export function appendComplianceFooter(
 }
 
 /**
- * Hard, code-level backstop for a real incident: a composer generated
- * "Best regards, [Your Name]" and it was actually sent to a real person.
- * The prompt-level fix (both composers now explicitly say to always sign
- * as "Innocent Mwangi" if a closing appears at all) should prevent this,
- * but a prompt instruction is never a 100% guarantee — this catches the
- * literal placeholder pattern regardless and fixes it unconditionally, so
- * this specific failure mode cannot recur even if a future prompt change
- * accidentally weakens the instruction above.
+ * Hard, code-level backstops for two real incidents:
+ *
+ * 1. A composer generated "Best regards, [Your Name]" and it was sent to
+ *    a real person. Fixed at the prompt level (both composers now say to
+ *    always sign as "Innocent Mwangi" if a closing appears at all), but a
+ *    prompt instruction is never a 100% guarantee — this catches the
+ *    literal placeholder regardless.
+ *
+ * 2. A composer generated "Dear [Recipient's Name]," when it had no
+ *    individual contact name for an organization-type prospect. Same
+ *    pattern: fixed at the prompt level, backstopped here.
+ *
+ * Both are applied unconditionally to every outgoing body, so neither
+ * failure mode can recur even if a future prompt change weakens the
+ * instruction that's supposed to prevent it in the first place.
  */
-const NAME_PLACEHOLDER_PATTERN = /\[(your name|sender name|name)\]/gi;
+const SENDER_PLACEHOLDER_PATTERN = /\[(your name|sender name)\]/gi;
 const SENDER_DISPLAY_NAME = "Innocent Mwangi";
 
-export function fixNamePlaceholders(body: string): string {
-  return body.replace(NAME_PLACEHOLDER_PATTERN, SENDER_DISPLAY_NAME);
+// Matches a greeting line ("Dear X," / "Hi X," / "Hello X,") where X is a
+// bracketed placeholder, however it's worded — [Recipient's Name],
+// [Recipient Name], [Prospect Name], [Client Name], [First Name], etc.
+const GREETING_PLACEHOLDER_PATTERN = /\b(Dear|Hi|Hello)\s+\[[^\]]*\]\s*,/gi;
+
+// Any other bracketed placeholder containing the word "name" that wasn't
+// part of a recognized greeting line above — a final catch-all.
+const GENERIC_NAME_PLACEHOLDER_PATTERN = /\[[^\]]*\bname\b[^\]]*\]/gi;
+
+export function fixNamePlaceholders(
+  body: string,
+  recipientName?: string
+): string {
+  let result = body.replace(SENDER_PLACEHOLDER_PATTERN, SENDER_DISPLAY_NAME);
+
+  result = result.replace(GREETING_PLACEHOLDER_PATTERN, (match, greetingWord) =>
+    recipientName ? `${greetingWord} ${recipientName},` : "Hi there,"
+  );
+
+  result = result.replace(
+    GENERIC_NAME_PLACEHOLDER_PATTERN,
+    recipientName ?? "there"
+  );
+
+  return result;
+}
+
+/**
+ * Hard, code-level backstop for a third real incident: composeEmail.ts
+ * now has a live web search tool, and the model sometimes carries its own
+ * inline citation markup — "(text)([site.com](url))" or plain markdown
+ * links "[text](url)" — straight into the final output. These emails are
+ * sent as plain text, not HTML, so markdown link syntax never renders;
+ * it just shows up as broken literal brackets and parentheses to a real
+ * recipient. Fixed at the prompt level (explicit instruction never to
+ * include citation markup or markdown links), backstopped here.
+ */
+const CITATION_ARTIFACT_PATTERN = /\s*\(\[[^\]]+\]\([^)]+\)\)/g;
+const MARKDOWN_LINK_PATTERN = /\[([^\]]+)\]\(([^)]+)\)/g;
+
+export function stripMarkdownArtifacts(body: string): string {
+  let result = body.replace(CITATION_ARTIFACT_PATTERN, "");
+  result = result.replace(MARKDOWN_LINK_PATTERN, "$1");
+  return result;
 }
 
 let cachedTransporter: ReturnType<typeof nodemailer.createTransport> | null = null;
@@ -154,7 +211,10 @@ export async function sendEmail(
   let finalBody: string;
   try {
     finalBody = appendComplianceFooter(
-      fixNamePlaceholders(input.body),
+      fixNamePlaceholders(
+        stripMarkdownArtifacts(input.body),
+        input.recipientName
+      ),
       input.unsubscribeToken
     );
   } catch (error) {

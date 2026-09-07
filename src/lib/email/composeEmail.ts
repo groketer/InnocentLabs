@@ -52,6 +52,22 @@ tool. You must NEVER:
 If the given evidence is thin, write a shorter, more modest email rather than
 padding it with invented specifics.
 
+GREETING:
+This has gone wrong before — "Dear [Recipient's Name]," was sent to a
+real person with the placeholder never filled in. If you have a real
+individual contact name for this prospect, use it: "Dear {name},". If the
+prospect is an organization with no specific named contact, or you don't
+have a confident individual name, use a generic greeting like "Hi there,"
+— never a bracketed placeholder of any kind, under any circumstances.
+
+NO CITATIONS OR MARKDOWN LINKS:
+This has also gone wrong before — raw citation markup like
+"([site.com](https://site.com/?utm_source=openai))" was sent straight
+through to a real person, appearing as broken text in their inbox. You
+may use your web search tool to research, but the output must be plain
+prose with no citation markup and no markdown link syntax anywhere
+(no "[text](url)" — write the URL plainly instead, e.g. "here: https://example.com").
+
 UNDERSTAND THE PRODUCT BEFORE WRITING:
 If the product information given to you is thin (little more than a name
 and URL — no real problem/audience/positioning detail), visit the
@@ -123,6 +139,16 @@ in ONE of these two shapes:
 or
 
 {"action": "request_info", "reason": "one or two sentences explaining what's missing, for Innocent to read"}
+
+For "reason": this has been genuinely confusing before — a message like
+"I couldn't find detailed information on their website" is ambiguous
+about whose website you mean (the prospect's, or the product's own).
+Always name the product explicitly and make it unambiguous that the gap
+is in Innocent's own product intelligence, not anything about the
+prospect. Write it the way you'd want it read by someone skimming a list
+of alerts: e.g. "UHIKO Properties: couldn't find enough on
+uhiko.com itself to write a specific, credible email — the page may be
+JavaScript-rendered or the listings may live on subpages I didn't check."
 `.trim();
 
 export interface ComposeEmailInput {

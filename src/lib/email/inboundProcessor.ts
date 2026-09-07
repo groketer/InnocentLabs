@@ -319,6 +319,7 @@ async function processOneMessage(
     subject: decision.subject,
     body: decision.body,
     unsubscribeToken,
+    recipientName: prospect.prospect_type === "person" ? prospect.name : undefined,
     inReplyTo: message.messageId ?? latestSend?.message_id,
   });
 

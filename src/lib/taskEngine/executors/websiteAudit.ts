@@ -471,6 +471,127 @@ function analyzeSeo(html: string, url: string, visibleText: string): SeoSignals 
   };
 }
 
+/**
+ * MILESTONE 3P — deeper crawling, not just the homepage.
+ *
+ * A real, reported problem: for a site like a real-estate listings
+ * platform, the homepage alone often doesn't show the actual listings —
+ * those live on subpages (/properties, /listings, etc.). A single-fetch
+ * audit genuinely cannot see that content, which is exactly why repeated
+ * emails kept escalating with "couldn't find enough detail" even though
+ * the site has plenty of real content, just not on the page being read.
+ *
+ * This identifies a small number of likely high-value internal links
+ * from the homepage and fetches them too, merging their text into the
+ * same observation — bounded (at most 2 extra pages, short timeout each)
+ * so this stays fast and cheap rather than turning into an open-ended
+ * crawl.
+ */
+const HIGH_VALUE_LINK_KEYWORDS = [
+  "propert",
+  "listing",
+  "portfolio",
+  "project",
+  "development",
+  "for-sale",
+  "for-rent",
+  "homes",
+  "services",
+  "about",
+];
+
+function identifyHighValueLinks(
+  links: Array<{ text: string; href: string }>,
+  baseUrl: string,
+  max: number
+): string[] {
+  let baseOrigin: string;
+  try {
+    baseOrigin = new URL(baseUrl).origin;
+  } catch {
+    return [];
+  }
+
+  const scored = links
+    .filter((link) => {
+      try {
+        const linkUrl = new URL(link.href, baseUrl);
+        return linkUrl.origin === baseOrigin;
+      } catch {
+        return false;
+      }
+    })
+    .map((link) => {
+      const haystack = `${link.href} ${link.text}`.toLowerCase();
+      const score = HIGH_VALUE_LINK_KEYWORDS.reduce(
+        (acc, kw) => (haystack.includes(kw) ? acc + 1 : acc),
+        0
+      );
+      return { href: link.href, score };
+    })
+    .filter((l) => l.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const link of scored) {
+    if (seen.has(link.href)) continue;
+    seen.add(link.href);
+    result.push(link.href);
+    if (result.length >= max) break;
+  }
+  return result;
+}
+
+async function fetchAdditionalPageText(url: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; Innocent-Intelligence/3.1; +https://innocent.co.ke)",
+        Accept: "text/html,application/xhtml+xml",
+      },
+    });
+
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get("content-type") ?? "";
+    if (!contentType.includes("html")) return null;
+
+    const html = await res.text();
+    return stripHtml(html).slice(0, 8000);
+  } catch {
+    // Best-effort — a failed subpage fetch should never break the audit.
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function crawlAdditionalPages(
+  links: Array<{ text: string; href: string }>,
+  baseUrl: string
+): Promise<{ crawledUrls: string[]; combinedText: string }> {
+  const candidates = identifyHighValueLinks(links, baseUrl, 2);
+  const crawledUrls: string[] = [];
+  const texts: string[] = [];
+
+  for (const url of candidates) {
+    const text = await fetchAdditionalPageText(url);
+    if (text && text.length > 100) {
+      crawledUrls.push(url);
+      texts.push(`\n\n--- Additional content from ${url} ---\n${text}`);
+    }
+  }
+
+  return { crawledUrls, combinedText: texts.join("") };
+}
+
 function detectSignals(
   visibleText: string,
   links: Array<{
@@ -748,6 +869,7 @@ interface WebsiteObservation {
 
   signals: DetectedSignals;
   seo: SeoSignals;
+  additional_pages_crawled: string[];
 
   evidence_type:
     | "DIRECT_WEBSITE_OBSERVATION";
@@ -1509,8 +1631,18 @@ export const websiteAuditExecutor: TaskExecutor = {
           html
         );
 
-      let visibleText =
+      const homepageOnlyText =
         stripHtml(html);
+
+      let visibleText =
+        homepageOnlyText;
+
+      const { crawledUrls, combinedText } =
+        await crawlAdditionalPages(links, finalUrl);
+
+      if (combinedText) {
+        visibleText += combinedText;
+      }
 
       if (
         visibleText.length >
@@ -1529,11 +1661,16 @@ export const websiteAuditExecutor: TaskExecutor = {
           links
         );
 
+      // SEO word-count and other content checks deliberately use ONLY
+      // the homepage's own text — crawling extra pages makes the AGENT'S
+      // understanding richer, but shouldn't make a genuinely thin
+      // homepage look fine on its own SEO merits just because other
+      // pages have more content.
       const seo =
         analyzeSeo(
           html,
           finalUrl,
-          visibleText
+          homepageOnlyText
         );
 
       const observation:
@@ -1578,6 +1715,9 @@ export const websiteAuditExecutor: TaskExecutor = {
         signals,
 
         seo,
+
+        additional_pages_crawled:
+          crawledUrls,
 
         visible_text_sample:
           visibleText.slice(
@@ -1677,6 +1817,11 @@ export const websiteAuditExecutor: TaskExecutor = {
           ? ` SEO: ${seo.issues.length} issue${seo.issues.length === 1 ? "" : "s"} found.`
           : " SEO: no significant issues found.";
 
+      const crawlSummary =
+        crawledUrls.length > 0
+          ? ` Also crawled ${crawledUrls.length} additional page${crawledUrls.length === 1 ? "" : "s"} (${crawledUrls.join(", ")}).`
+          : "";
+
       return {
         success: true,
 
@@ -1686,7 +1831,7 @@ export const websiteAuditExecutor: TaskExecutor = {
           `${headings.length} headings, ` +
           `${links.length} links, ` +
           `${unknowns.length} explicit unknowns, ` +
-          `confidence ${confidence}.${signalSummary}${seoSummary}`,
+          `confidence ${confidence}.${signalSummary}${seoSummary}${crawlSummary}`,
 
         resultData: {
           product_name:

@@ -1037,6 +1037,76 @@ export async function updateProspect(
   return updated;
 }
 
+/**
+ * MILESTONE 3S — genuine deep qualification.
+ *
+ * Applies the result of an actual research-driven qualification pass —
+ * not the old one-line "confidence >= threshold" check against a number
+ * assigned once during discovery, but a real decision made after fresh,
+ * targeted research specifically about whether THIS prospect should be
+ * qualified. Updates confidence and fit_reason to reflect that fresh
+ * research, and appends any new evidence found along the way rather than
+ * discarding it.
+ */
+export async function applyDeepQualificationResult(
+  userId: string,
+  prospectId: string,
+  result: {
+    qualification_status: "qualified" | "unqualified";
+    confidence: number;
+    fit_reason: string;
+    additional_evidence: ProspectEvidence[];
+  }
+): Promise<Prospect> {
+  const normalizedUserId = userId.trim();
+  const normalizedId = prospectId.trim();
+
+  if (!normalizedUserId || !normalizedId) {
+    throw new Error("A user and prospect id are required.");
+  }
+
+  const existing = await getProspectById(normalizedUserId, normalizedId);
+  if (!existing) {
+    throw new Error("Prospect not found.");
+  }
+
+  const mergedEvidence = [
+    ...existing.evidence,
+    ...result.additional_evidence,
+  ];
+
+  const db = await getDb();
+
+  await db.execute({
+    sql: `
+      UPDATE prospects
+      SET
+        qualification_status = @qualification_status,
+        confidence = @confidence,
+        fit_reason = @fit_reason,
+        evidence = @evidence,
+        updated_at = @updated_at
+      WHERE id = @id
+        AND user_id = @user_id
+    `,
+    args: {
+      id: normalizedId,
+      user_id: normalizedUserId,
+      qualification_status: result.qualification_status,
+      confidence: result.confidence,
+      fit_reason: result.fit_reason,
+      evidence: JSON.stringify(mergedEvidence),
+      updated_at: new Date().toISOString(),
+    },
+  });
+
+  const updated2 = await getProspectById(normalizedUserId, normalizedId);
+  if (!updated2) {
+    throw new Error("Prospect was updated but could not be retrieved afterward.");
+  }
+  return updated2;
+}
+
 /* -------------------------------------------------------------------------- */
 /* MILESTONE 3F — Follow-up campaigns                                        */
 /* -------------------------------------------------------------------------- */

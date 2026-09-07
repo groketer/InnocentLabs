@@ -161,8 +161,10 @@ export function SettingsContent() {
             className="h-4 w-4 rounded border-ink-600 bg-ink-800"
           />
           <span className="text-sm text-white/70">
-            Autonomous qualification — auto-promote &quot;Needs review&quot;
-            prospects to Qualified once confident enough, with no review
+            Autonomous qualification — runs a genuine research pass on
+            &quot;Needs review&quot; prospects daily and decides Qualified
+            or Unqualified based on fresh evidence, not just the original
+            discovery guess
           </span>
         </label>
 
@@ -186,8 +188,10 @@ export function SettingsContent() {
               className="mt-1 w-full"
             />
             <span className="mt-1 block text-xs text-white/30">
-              Lower = more autonomous, more prospects auto-qualified. Higher
-              = more conservative.
+              How confident the fresh research pass needs to be, after
+              actually looking into a prospect, before deciding
+              Qualified. Lower = more prospects clear the bar. Higher =
+              more conservative.
             </span>
           </label>
         )}

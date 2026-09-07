@@ -37,6 +37,7 @@ import { startPortfolioScheduler } from "./portfolioScheduler";
 import { startProspectingScheduler } from "./prospectingScheduler";
 import { startEmailCampaignScheduler } from "./emailCampaignScheduler";
 import { startAuditScheduler } from "./auditScheduler";
+import { startDeepQualificationScheduler } from "./deepQualificationScheduler";
 import {
   listActiveTopLevelTasks,
   listSubtasks,
@@ -585,7 +586,20 @@ async function recoverStaleRunningTasks(): Promise<void> {
  * autoQualifyDueProspects()'s doc comment in models/prospects.ts for what
  * this does and doesn't touch.
  */
-async function runAutoQualification(): Promise<void> {
+/**
+ * MILESTONE 3S — superseded by genuine deep qualification.
+ *
+ * This used to run every tick, promoting any needs_review prospect whose
+ * confidence score (assigned once, during initial discovery) cleared a
+ * threshold — a single SQL comparison, no fresh research. That's exactly
+ * the gap a direct complaint identified: qualification should always
+ * involve real research, not just checking a stored number. Replaced by
+ * deepQualificationScheduler.ts / deepQualification.ts, which runs an
+ * actual research agent per prospect. Left here, unused, as a record of
+ * what this used to do and why it changed — not called from tick()
+ * anymore.
+ */
+async function runAutoQualification_DEPRECATED(): Promise<void> {
   const settings = await getSettings();
 
   if (!settings.autonomous_qualification) {
@@ -651,7 +665,6 @@ async function runInboundEmailCheckIfDue(): Promise<void> {
 
 export async function tick(): Promise<void> {
   await recoverStaleRunningTasks();
-  await runAutoQualification();
   await runInboundEmailCheckIfDue();
 
   const tasks = await listActiveTopLevelTasks();
@@ -759,6 +772,7 @@ export function startEngine(): void {
   startProspectingScheduler();
   startEmailCampaignScheduler();
   startAuditScheduler();
+  startDeepQualificationScheduler();
 
   recoverInterruptedTasks().catch((err) =>
     console.error("[taskEngine] recoverInterruptedTasks() threw:", err)

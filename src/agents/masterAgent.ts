@@ -31,6 +31,7 @@ import { getResearchResultTool } from "./tools/getResearchResultTool";
 import type { AgentRunContext } from "./context";
 import { getProspectsTool } from "./tools/getProspectsTool";
 import { getFollowUpsStatusTool } from "./tools/getFollowUpsStatusTool";
+import { getSettingsTool } from "./tools/getSettingsTool";
 
 const MODEL = "gpt-4.1-mini";
 
@@ -539,6 +540,7 @@ tools: [
   getResearchResultTool,
   getProspectsTool,
   getFollowUpsStatusTool,
+  getSettingsTool,
   webSearchTool({ searchContextSize: "medium" }),
 ],
 

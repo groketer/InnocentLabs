@@ -47,6 +47,17 @@ export const AUTHORITATIVE_PORTFOLIO: Array<{
   notes?: string | null;
 }> = [
   {
+    name: "Innocent Intelligence",
+    url: "https://ilabs.innocent.co.ke",
+    asset_type: "product",
+    category: "AI business development platform",
+    description:
+      "An autonomous AI system that runs a business's outbound growth work continuously — researching the market, finding real prospects, writing and sending personalized outreach, and handling replies — sold as a done-for-you service to businesses across Kenya and Eastern Africa. Innocent Labs' own outreach for its product portfolio runs on this exact system, which serves as a live, working demonstration rather than a claim.",
+    status: "active",
+    notes:
+      "Geographic priority: Kenya first, then the rest of Eastern Africa. Pricing differs by region — see supplementary_knowledge once set via the Products page, since it's a structured field better edited there than baked into this static portfolio entry.",
+  },
+  {
     name: "Innocent.co.ke Marketplace",
     url: "https://innocent.co.ke",
     asset_type: "product",

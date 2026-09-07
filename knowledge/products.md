@@ -288,3 +288,18 @@ When conducting website audits, preserve structured evidence such as:
 - observation timestamp
 
 Website observations should be distinguished from founder-provided business information.
+---
+
+## 19. Innocent.co.ke Marketplace
+
+URL: https://innocent.co.ke
+
+Innocent.co.ke Marketplace is an Innocent Labs product — the marketplace platform itself as a business opportunity in its own right (attracting sellers to list and buyers to browse), separate from the individual products listed on it and separate from the internal "Innocent Marketplace" hub record used for organizational purposes.
+
+## 20. Innocent Intelligence
+
+URL: https://ilabs.innocent.co.ke
+
+Innocent Intelligence is an Innocent Labs product — an autonomous AI business-development platform, sold as a done-for-you service to businesses across Kenya and Eastern Africa. Innocent Labs' own outreach for its product portfolio runs on this exact system.
+
+Note: this file is background context checked at the start of a conversation — for a current, authoritative count or list of the portfolio, use the list_products tool rather than counting entries here, since this file is not automatically kept in sync with the database.

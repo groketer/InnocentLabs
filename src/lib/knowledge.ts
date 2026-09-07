@@ -72,6 +72,12 @@ export async function loadKnowledgeBase(): Promise<string> {
   }
 
   return documents
-    .map((doc) => `## Source: ${doc.name}\n\n${doc.content}`)
+    .map((doc) => {
+      const staleWarning =
+        doc.name === "products.md"
+          ? "\n\n**WARNING — this specific file is background context written once, early in this project, and is NOT kept in sync with the live database. It can be, and has been, stale — missing products added since. For any question about the current portfolio (how many products, what exists, list them), use the list_products tool instead of this file.**"
+          : "";
+      return `## Source: ${doc.name}${staleWarning}\n\n${doc.content}`;
+    })
     .join("\n\n---\n\n");
 }

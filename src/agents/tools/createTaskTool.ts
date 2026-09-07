@@ -53,6 +53,17 @@ ${taskTypes.join(", ")}
 If none of the supported task types fit the requested or proposed work,
 do not call this tool.
 
+TARGETING A SPECIFIC PRODUCT (prospecting, website_audit, email_campaign):
+These task types act on one specific Innocent Labs product. The executor
+identifies which product from the task's title and description — so when
+Innocent asks to prospect, audit, or run a campaign for a named product
+(e.g. "prospect for UHIKO Properties" or "audit uhiko.com"), state that
+exact product name plainly in the title, e.g. "Prospect for UHIKO
+Properties" or "Audit UHIKO Properties". If Innocent doesn't name a
+specific product, don't invent one — a title that names no product will
+let the system choose automatically, which is the right behavior when
+none was requested.
+
 When creating a follow-on task autonomously, explain the reason in the task
 description. The description should make clear:
 

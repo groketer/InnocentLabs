@@ -7,6 +7,13 @@ import type { ProductInsight } from "@/lib/models/insights";
 
 type ProductWithSeo = Product & { seo_issues: string[] | null };
 
+interface ProductDocument {
+  id: string;
+  filename: string;
+  char_count: number;
+  uploaded_at: string;
+}
+
 export function ProductsContent() {
   const [products, setProducts] = useState<ProductWithSeo[] | null>(null);
   const [insights, setInsights] = useState<Record<string, ProductInsight>>({});
@@ -15,6 +22,11 @@ export function ProductsContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [editingNotes, setEditingNotes] = useState<Record<string, string>>({});
   const [editingGeo, setEditingGeo] = useState<Record<string, string>>({});
+  const [editingKnowledge, setEditingKnowledge] = useState<Record<string, string>>({});
+  const [documents, setDocuments] = useState<Record<string, ProductDocument[]>>({});
+  const [expandedKnowledge, setExpandedKnowledge] = useState<string | null>(null);
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -113,6 +125,83 @@ export function ProductsContent() {
       setError(err instanceof Error ? err.message : "Could not update campaign status.");
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function saveSupplementaryKnowledge(id: string) {
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/products/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ supplementary_knowledge: editingKnowledge[id] ?? "" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not save.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function loadDocuments(productId: string) {
+    try {
+      const res = await fetch(`/api/products/${productId}/documents`);
+      const data = await res.json();
+      if (res.ok) {
+        setDocuments((prev) => ({ ...prev, [productId]: data.documents }));
+      }
+    } catch {
+      // Non-fatal — the panel just shows nothing until retried.
+    }
+  }
+
+  async function toggleKnowledgePanel(productId: string) {
+    if (expandedKnowledge === productId) {
+      setExpandedKnowledge(null);
+      return;
+    }
+    setExpandedKnowledge(productId);
+    setDocError(null);
+    await loadDocuments(productId);
+  }
+
+  async function handleDocUpload(productId: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    setUploadingDoc(productId);
+    setDocError(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/products/${productId}/documents`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not upload document.");
+      await loadDocuments(productId);
+    } catch (err) {
+      setDocError(err instanceof Error ? err.message : "Could not upload document.");
+    } finally {
+      setUploadingDoc(null);
+    }
+  }
+
+  async function handleDocDelete(productId: string, documentId: string) {
+    try {
+      const res = await fetch(`/api/products/${productId}/documents/${documentId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not delete document.");
+      await loadDocuments(productId);
+    } catch (err) {
+      setDocError(err instanceof Error ? err.message : "Could not delete document.");
     }
   }
 
@@ -328,7 +417,94 @@ export function ProductsContent() {
                 >
                   {p.campaign_paused ? "Resume campaign sending" : "Pause campaign sending"}
                 </button>
+                <button
+                  onClick={() => toggleKnowledgePanel(p.id)}
+                  className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300"
+                >
+                  {expandedKnowledge === p.id ? "Hide knowledge base" : "Knowledge base"}
+                </button>
               </div>
+
+              {expandedKnowledge === p.id && (
+                <div className="mt-3 space-y-3 border-t border-ink-800 pt-3">
+                  <div>
+                    <label className="text-xs text-white/40">
+                      Supplementary knowledge — gated or internal info the
+                      agent can&apos;t find on its own, included directly
+                      whenever it writes about this product
+                    </label>
+                    <textarea
+                      placeholder="e.g. pricing tiers not on the website, upcoming features, internal positioning notes…"
+                      defaultValue={p.supplementary_knowledge ?? ""}
+                      onChange={(e) =>
+                        setEditingKnowledge((prev) => ({ ...prev, [p.id]: e.target.value }))
+                      }
+                      rows={3}
+                      className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-xs text-white outline-none focus:border-emerald-500/50"
+                    />
+                    {editingKnowledge[p.id] !== undefined &&
+                      editingKnowledge[p.id] !== (p.supplementary_knowledge ?? "") && (
+                        <button
+                          disabled={busyId === p.id}
+                          onClick={() => saveSupplementaryKnowledge(p.id)}
+                          className="mt-1 rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-ink-950 disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                      )}
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-white/40">
+                        Reference documents — the agent searches these for
+                        passages relevant to each specific prospect (e.g.
+                        a book, a spec sheet)
+                      </label>
+                      <label className="cursor-pointer rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:text-white">
+                        {uploadingDoc === p.id ? "Uploading…" : "Upload"}
+                        <input
+                          type="file"
+                          accept=".pdf,.docx,.txt,.md"
+                          className="hidden"
+                          disabled={uploadingDoc === p.id}
+                          onChange={(e) => handleDocUpload(p.id, e)}
+                        />
+                      </label>
+                    </div>
+
+                    {docError && (
+                      <p className="mt-1 text-xs text-red-300">{docError}</p>
+                    )}
+
+                    <div className="mt-2 space-y-1">
+                      {(documents[p.id] ?? []).length === 0 ? (
+                        <p className="text-xs text-white/30">No documents uploaded yet.</p>
+                      ) : (
+                        (documents[p.id] ?? []).map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="flex items-center justify-between rounded-md border border-ink-800 bg-white/[0.02] px-3 py-2 text-xs"
+                          >
+                            <span className="text-white/60">
+                              {doc.filename}{" "}
+                              <span className="text-white/30">
+                                ({Math.round(doc.char_count / 1000)}k chars)
+                              </span>
+                            </span>
+                            <button
+                              onClick={() => handleDocDelete(p.id, doc.id)}
+                              className="text-white/30 transition-colors hover:text-red-300"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ))
         )}

@@ -27,12 +27,14 @@
  * unconditionally afterward.
  */
 
-import { Agent, run, webSearchTool } from "@openai/agents";
+import { Agent, run, tool, webSearchTool } from "@openai/agents";
+import { z } from "zod";
 import type { Prospect } from "@/lib/models/prospects";
 import type { Product } from "@/lib/types";
 import type { EmailSend } from "@/lib/models/emailSends";
 import { recordApiUsage } from "@/lib/models/apiUsage";
 import { LOCAL_USER_ID } from "@/lib/localUser";
+import { searchProductKnowledge } from "@/lib/models/productDocuments";
 
 const MODEL = "gpt-4.1-mini";
 const MAX_TURNS = 4;
@@ -198,6 +200,17 @@ function buildUserPrompt(input: ComposeEmailInput): string {
     lines.push(`- URL: none on file`);
   }
 
+  if (product.supplementary_knowledge) {
+    lines.push("");
+    lines.push("ADDITIONAL CONTEXT FROM INNOCENT (gated/internal — not published anywhere):");
+    lines.push(product.supplementary_knowledge);
+  }
+
+  lines.push("");
+  lines.push(
+    "This product may have uploaded reference documents (e.g. a book) — use search_product_knowledge if referencing specific, real content from them would make this email more relevant to this particular prospect. Not every email needs this; use it when it would genuinely help, not by default."
+  );
+
   const richFieldCount = [product.problem, product.audience, product.positioning, product.features]
     .filter(Boolean).length;
 
@@ -258,6 +271,56 @@ function parseComposedEmail(raw: string): ComposeEmailResult {
   throw new Error(`Email composer returned an unrecognized action: ${String(obj.action)}`);
 }
 
+/**
+ * MILESTONE 3U — product knowledge base.
+ *
+ * Bound to one specific product via closure (a fresh Agent is built per
+ * call in composeOutreachEmail anyway, so this doesn't need to be a
+ * shared/static tool). Lets the composer search uploaded documents —
+ * a book, a spec sheet, whatever's been given — for passages relevant to
+ * THIS prospect specifically, rather than the composer either ignoring
+ * the document entirely or the prompt trying to stuff an entire book in
+ * every time regardless of relevance.
+ */
+function buildKnowledgeSearchTool(productId: string) {
+  return tool({
+    name: "search_product_knowledge",
+
+    description: `
+Search this product's uploaded reference documents (if any) for passages
+relevant to what you're currently trying to write. Use this when you want
+to ground the email in specific, real content from a document Innocent
+has provided — e.g. finding which chapter or principle of a book is most
+relevant to THIS particular prospect's situation — rather than writing
+generically.
+
+Query with a few words describing what you're looking for, grounded in
+the prospect's actual situation (e.g. "commercial real estate land value"
+rather than something generic). If nothing relevant comes back, that's a
+legitimate result — it means either no documents are uploaded for this
+product, or nothing in them matches closely enough to be worth citing.
+Never fabricate a passage that wasn't actually returned here.
+`,
+
+    parameters: z.object({
+      query: z.string().describe("A few words describing what you're looking for, grounded in the prospect's specific situation."),
+    }),
+
+    async execute({ query }) {
+      const results = await searchProductKnowledge(productId, query, 3);
+
+      if (results.length === 0) {
+        return { found: false, message: "No matching passages found in this product's uploaded documents." };
+      }
+
+      return {
+        found: true,
+        passages: results.map((r) => ({ source: r.filename, text: r.chunk_text })),
+      };
+    },
+  });
+}
+
 export async function composeOutreachEmail(
   input: ComposeEmailInput
 ): Promise<ComposeEmailResult> {
@@ -269,7 +332,7 @@ export async function composeOutreachEmail(
     name: "Email Composer",
     model: MODEL,
     instructions: SYSTEM_PROMPT,
-    tools: [webSearchTool()],
+    tools: [webSearchTool(), buildKnowledgeSearchTool(input.product.id)],
   });
 
   const result = await run(agent, buildUserPrompt(input), {

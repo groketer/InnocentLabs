@@ -840,6 +840,45 @@ export async function updateProductCampaignPaused(
  * prospecting.ts, which includes this verbatim in the agent's brief when
  * it's set.
  */
+/**
+ * MILESTONE 3U — product knowledge base.
+ *
+ * Free-text supplementary knowledge — gated info, internal context, or
+ * anything else not published anywhere the agent could discover it on
+ * its own. Short enough to be included directly in a composer's prompt
+ * every time, unlike uploaded documents which are searched instead.
+ */
+export async function updateProductSupplementaryKnowledge(
+  id: string,
+  knowledge: string
+): Promise<Product> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      UPDATE products
+      SET supplementary_knowledge = @knowledge, updated_at = ${NOW_ISO_SQL}
+      WHERE id = @id
+    `,
+    args: { id, knowledge: knowledge || null },
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Product not found.");
+  }
+
+  const result2 = await db.execute({
+    sql: `SELECT * FROM products WHERE id = ?`,
+    args: [id],
+  });
+
+  const product = result2.rows[0] as unknown as Product | undefined;
+  if (!product) {
+    throw new Error("Product was updated but could not be retrieved afterward.");
+  }
+  return product;
+}
+
 export async function updateProductGeographicFocus(
   id: string,
   geographicFocus: string

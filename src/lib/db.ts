@@ -725,6 +725,61 @@ async function runMigrations(db: Db): Promise<void> {
       `ALTER TABLE products ADD COLUMN campaign_paused BOOLEAN NOT NULL DEFAULT false`
     );
   }
+
+  /*
+   * MILESTONE 3U — product knowledge base.
+   *
+   * Two complementary ways to give the agent context beyond what it can
+   * discover on its own:
+   *
+   * 1. supplementary_knowledge — a free-text field for anything gated or
+   *    otherwise not published anywhere the agent could find it. Short
+   *    enough to include directly in a composer's prompt every time.
+   *
+   * 2. product_documents / product_document_chunks — uploaded files
+   *    (a book, a spec sheet, whatever) that can be much longer than
+   *    fits in one prompt. Chunked so the composer can search for and
+   *    pull in just the passages relevant to a specific prospect,
+   *    rather than either omitting the document or stuffing all of it
+   *    into every single email's context regardless of relevance.
+   */
+  if (!productsColumns.has("supplementary_knowledge")) {
+    await db.execute(
+      `ALTER TABLE products ADD COLUMN supplementary_knowledge TEXT`
+    );
+  }
+
+  await db.batch(
+    [
+      {
+        sql: `CREATE TABLE IF NOT EXISTS product_documents (
+          id           TEXT PRIMARY KEY,
+          product_id   TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          filename     TEXT NOT NULL,
+          char_count   INTEGER NOT NULL,
+          uploaded_at  TEXT NOT NULL DEFAULT (${NOW_ISO_SQL})
+        )`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_product_documents_product
+          ON product_documents(product_id)`,
+      },
+      {
+        sql: `CREATE TABLE IF NOT EXISTS product_document_chunks (
+          id            TEXT PRIMARY KEY,
+          document_id   TEXT NOT NULL REFERENCES product_documents(id) ON DELETE CASCADE,
+          product_id    TEXT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          chunk_index   INTEGER NOT NULL,
+          chunk_text    TEXT NOT NULL
+        )`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_product_document_chunks_product
+          ON product_document_chunks(product_id)`,
+      },
+    ],
+    "write"
+  );
 }
 
 /**

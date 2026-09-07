@@ -3,6 +3,7 @@ import {
   updateProductNotes,
   updateProductGeographicFocus,
   updateProductCampaignPaused,
+  updateProductSupplementaryKnowledge,
 } from "@/lib/models/products";
 
 export const runtime = "nodejs";
@@ -18,10 +19,14 @@ export async function PATCH(
     const hasNotes = typeof body?.notes === "string";
     const hasGeo = typeof body?.geographic_focus === "string";
     const hasPaused = typeof body?.campaign_paused === "boolean";
+    const hasKnowledge = typeof body?.supplementary_knowledge === "string";
 
-    if (!hasNotes && !hasGeo && !hasPaused) {
+    if (!hasNotes && !hasGeo && !hasPaused && !hasKnowledge) {
       return NextResponse.json(
-        { error: "notes, geographic_focus, or campaign_paused is required." },
+        {
+          error:
+            "notes, geographic_focus, campaign_paused, or supplementary_knowledge is required.",
+        },
         { status: 400 }
       );
     }
@@ -35,6 +40,12 @@ export async function PATCH(
     }
     if (hasPaused) {
       product = await updateProductCampaignPaused(params.id, body.campaign_paused);
+    }
+    if (hasKnowledge) {
+      product = await updateProductSupplementaryKnowledge(
+        params.id,
+        body.supplementary_knowledge
+      );
     }
 
     return NextResponse.json({ product });

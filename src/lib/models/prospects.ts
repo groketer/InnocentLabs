@@ -1149,6 +1149,7 @@ export async function listProspectsDueForOutreach(
         AND prospects.qualification_status = 'qualified'
         AND prospects.email IS NOT NULL
         AND (products.campaign_paused IS NULL OR products.campaign_paused = false)
+        AND (products.approval_status IS NULL OR products.approval_status = 'approved')
         AND (
           prospects.sequence_status = 'not_started'
           OR (prospects.sequence_status = 'active' AND prospects.next_send_at IS NOT NULL AND prospects.next_send_at <= @now)

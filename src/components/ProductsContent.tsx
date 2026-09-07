@@ -27,6 +27,9 @@ export function ProductsContent() {
   const [expandedKnowledge, setExpandedKnowledge] = useState<string | null>(null);
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newProduct, setNewProduct] = useState({ name: "", url: "", category: "", description: "" });
+  const [addingProduct, setAddingProduct] = useState(false);
 
   async function load() {
     try {
@@ -128,6 +131,58 @@ export function ProductsContent() {
     }
   }
 
+  async function handleDeleteProduct(id: string, name: string) {
+    if (!window.confirm(`Delete "${name}"? Any prospects linked to it are kept, just detached from this product. This can't be undone.`)) {
+      return;
+    }
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/products/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not delete product.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete product.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleApproveProduct(id: string) {
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/products/${id}/approve`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not approve product.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not approve product.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleCreateProduct() {
+    setAddingProduct(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/products", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newProduct),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not create product.");
+      setNewProduct({ name: "", url: "", category: "", description: "" });
+      setShowAddForm(false);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create product.");
+    } finally {
+      setAddingProduct(false);
+    }
+  }
+
   async function saveSupplementaryKnowledge(id: string) {
     setBusyId(id);
     try {
@@ -216,13 +271,64 @@ export function ProductsContent() {
             organizations outside this list, never anything shown here.
           </p>
         </div>
-        <a
-          href="/api/products/export"
-          className="shrink-0 rounded-md border border-ink-600 px-3 py-2 text-xs text-white/60 transition-colors hover:text-white"
-        >
-          Download CSV
-        </a>
+        <div className="flex shrink-0 gap-2">
+          <a
+            href="/api/products/export"
+            className="rounded-md border border-ink-600 px-3 py-2 text-xs text-white/60 transition-colors hover:text-white"
+          >
+            Download CSV
+          </a>
+          <button
+            onClick={() => setShowAddForm((v) => !v)}
+            className="rounded-md bg-emerald-500 px-3 py-2 text-xs font-medium text-ink-950 transition-opacity hover:opacity-90"
+          >
+            {showAddForm ? "Cancel" : "Add product"}
+          </button>
+        </div>
       </div>
+
+      {showAddForm && (
+        <div className="mt-4 rounded-md border border-ink-700 bg-ink-900 p-4">
+          <p className="text-xs text-white/40">
+            A failsafe for adding a product directly — useful if something&apos;s
+            wrong with innocent.co.ke&apos;s sync, or for a product that
+            shouldn&apos;t go through marketplace discovery at all.
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <input
+              placeholder="Product name"
+              value={newProduct.name}
+              onChange={(e) => setNewProduct({ ...newProduct, name: e.target.value })}
+              className="rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
+            />
+            <input
+              placeholder="https://..."
+              value={newProduct.url}
+              onChange={(e) => setNewProduct({ ...newProduct, url: e.target.value })}
+              className="rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
+            />
+            <input
+              placeholder="Category (optional)"
+              value={newProduct.category}
+              onChange={(e) => setNewProduct({ ...newProduct, category: e.target.value })}
+              className="rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
+            />
+            <input
+              placeholder="Description (optional)"
+              value={newProduct.description}
+              onChange={(e) => setNewProduct({ ...newProduct, description: e.target.value })}
+              className="rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
+            />
+          </div>
+          <button
+            disabled={addingProduct || !newProduct.name || !newProduct.url}
+            onClick={handleCreateProduct}
+            className="mt-3 rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-ink-950 disabled:opacity-50"
+          >
+            {addingProduct ? "Creating…" : "Create product"}
+          </button>
+        </div>
+      )}
 
       {notice && (
         <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
@@ -259,6 +365,11 @@ export function ProductsContent() {
                     {p.campaign_paused && (
                       <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-400">
                         Campaign paused
+                      </span>
+                    )}
+                    {p.approval_status === "pending" && (
+                      <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] text-sky-400">
+                        Awaiting your approval
                       </span>
                     )}
                   </div>
@@ -390,40 +501,73 @@ export function ProductsContent() {
                   )}
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  disabled={busyId === p.id}
-                  onClick={() => trigger(p.id, "audit")}
-                  className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
-                >
-                  Audit now
-                </button>
-                <button
-                  disabled={busyId === p.id}
-                  onClick={() => trigger(p.id, "prospect")}
-                  className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
-                >
-                  Prospect now
-                </button>
-                <button
-                  disabled={busyId === p.id}
-                  onClick={() => toggleCampaignPaused(p.id, !p.campaign_paused)}
-                  className={`rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-40 ${
-                    p.campaign_paused
-                      ? "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
-                      : "border-ink-600 text-white/60 hover:border-amber-500/40 hover:text-amber-300"
-                  }`}
-                  title="Prospecting always continues regardless — this only affects whether outreach emails go out for this product"
-                >
-                  {p.campaign_paused ? "Resume campaign sending" : "Pause campaign sending"}
-                </button>
-                <button
-                  onClick={() => toggleKnowledgePanel(p.id)}
-                  className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300"
-                >
-                  {expandedKnowledge === p.id ? "Hide knowledge base" : "Knowledge base"}
-                </button>
-              </div>
+              {p.approval_status === "pending" ? (
+                <div className="mt-3 rounded-md border border-sky-500/20 bg-sky-500/5 px-3 py-2">
+                  <p className="text-xs text-sky-300">
+                    Discovered as a listing on innocent.co.ke — since that marketplace is
+                    open to anyone, this hasn&apos;t been confirmed as your own product
+                    yet. It won&apos;t be prospected or marketed until approved.
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      disabled={busyId === p.id}
+                      onClick={() => handleApproveProduct(p.id)}
+                      className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-ink-950 disabled:opacity-50"
+                    >
+                      Approve — this is my product
+                    </button>
+                    <button
+                      disabled={busyId === p.id}
+                      onClick={() => handleDeleteProduct(p.id, p.name)}
+                      className="rounded-md border border-ink-600 px-3 py-1 text-xs text-white/60 transition-colors hover:border-red-500/40 hover:text-red-300 disabled:opacity-50"
+                    >
+                      Not mine — dismiss
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    disabled={busyId === p.id}
+                    onClick={() => trigger(p.id, "audit")}
+                    className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
+                  >
+                    Audit now
+                  </button>
+                  <button
+                    disabled={busyId === p.id}
+                    onClick={() => trigger(p.id, "prospect")}
+                    className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
+                  >
+                    Prospect now
+                  </button>
+                  <button
+                    disabled={busyId === p.id}
+                    onClick={() => toggleCampaignPaused(p.id, !p.campaign_paused)}
+                    className={`rounded-md border px-2.5 py-1 text-xs transition-colors disabled:opacity-40 ${
+                      p.campaign_paused
+                        ? "border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+                        : "border-ink-600 text-white/60 hover:border-amber-500/40 hover:text-amber-300"
+                    }`}
+                    title="Prospecting always continues regardless — this only affects whether outreach emails go out for this product"
+                  >
+                    {p.campaign_paused ? "Resume campaign sending" : "Pause campaign sending"}
+                  </button>
+                  <button
+                    onClick={() => toggleKnowledgePanel(p.id)}
+                    className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300"
+                  >
+                    {expandedKnowledge === p.id ? "Hide knowledge base" : "Knowledge base"}
+                  </button>
+                  <button
+                    disabled={busyId === p.id}
+                    onClick={() => handleDeleteProduct(p.id, p.name)}
+                    className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/40 transition-colors hover:border-red-500/40 hover:text-red-300 disabled:opacity-40"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
 
               {expandedKnowledge === p.id && (
                 <div className="mt-3 space-y-3 border-t border-ink-800 pt-3">

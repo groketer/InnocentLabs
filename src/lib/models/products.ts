@@ -47,6 +47,17 @@ export const AUTHORITATIVE_PORTFOLIO: Array<{
   notes?: string | null;
 }> = [
   {
+    name: "Innocent.co.ke Marketplace",
+    url: "https://innocent.co.ke",
+    asset_type: "product",
+    category: "marketplace platform",
+    description:
+      "An open marketplace where anyone can list and sell their own products — a business opportunity in its own right (attracting sellers to list and buyers to browse), separate from the individual products listed on it.",
+    status: "active",
+    notes:
+      "Deliberately a SEPARATE record from the 'Innocent Marketplace' hub entry below, which exists only for internal organizational/exclusion purposes (prospecting never targets what's listed in that hub). This record is the marketplace platform itself as something to actively market and grow — added at Innocent's explicit request.",
+  },
+  {
     name: "Tiny Wins",
     url: "https://pbsolved.com",
     asset_type: "product",
@@ -424,6 +435,7 @@ export async function listProductsWithUrl(): Promise<Product[]> {
     (p) =>
       p.asset_type === "product" &&
       p.status !== "discontinued" &&
+      p.approval_status === "approved" &&
       !!p.url
   );
 }
@@ -706,7 +718,8 @@ export async function upsertDiscoveredPortfolioProduct(input: {
           asset_type,
           category,
           description,
-          notes
+          notes,
+          approval_status
         )
         VALUES (
           @id,
@@ -716,7 +729,8 @@ export async function upsertDiscoveredPortfolioProduct(input: {
           'product',
           @category,
           @description,
-          @notes
+          @notes,
+          'pending'
         )
       `,
       args: {
@@ -909,5 +923,132 @@ export async function updateProductGeographicFocus(
     throw new Error("Product was updated but could not be retrieved afterward.");
   }
 
+  return product;
+}
+
+/**
+ * MILESTONE 3V — approval gating.
+ *
+ * Approves a pending product (discovered from the marketplace, not yet
+ * confirmed as Innocent's own) — makes it eligible for prospecting and
+ * campaigns going forward. The reject path is just deleteProduct(); a
+ * rejected listing isn't Innocent's product, so there's nothing to keep
+ * a record of.
+ */
+export async function approveProduct(id: string): Promise<Product> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      UPDATE products
+      SET approval_status = 'approved', updated_at = ${NOW_ISO_SQL}
+      WHERE id = @id
+    `,
+    args: { id },
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Product not found.");
+  }
+
+  const result2 = await db.execute({
+    sql: `SELECT * FROM products WHERE id = ?`,
+    args: [id],
+  });
+
+  const product = result2.rows[0] as unknown as Product | undefined;
+  if (!product) {
+    throw new Error("Product was updated but could not be retrieved afterward.");
+  }
+  return product;
+}
+
+/**
+ * MILESTONE 3V — manual product management.
+ *
+ * Deletes a product entirely — e.g. removing an accidental duplicate, or
+ * rejecting a marketplace listing that turned out not to be Innocent's
+ * own. Prospects that reference this product are NOT deleted — their
+ * product_id is set to null so the historical record (evidence, past
+ * outreach, replies) is preserved even though the product itself is
+ * gone, rather than silently destroying real business data as a side
+ * effect of cleaning up a product record. Uploaded documents DO cascade
+ * (via the foreign key) since they only exist to serve this product.
+ */
+export async function deleteProduct(id: string): Promise<void> {
+  const db = await getDb();
+
+  await db.execute({
+    sql: `UPDATE prospects SET product_id = NULL WHERE product_id = ?`,
+    args: [id],
+  });
+
+  const result = await db.execute({
+    sql: `DELETE FROM products WHERE id = ?`,
+    args: [id],
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Product not found.");
+  }
+}
+
+/**
+ * MILESTONE 3V — manual product management.
+ *
+ * Creates a product directly, bypassing marketplace discovery entirely —
+ * a deliberate failsafe for when innocent.co.ke itself has a problem, or
+ * for a product that should never go through the marketplace-scraping
+ * path in the first place. Manually created products are approved
+ * immediately: a human directly creating a record IS the approval: the
+ * pending-approval gate exists specifically to make automated marketplace
+ * scraping less trusted than that, not to add friction to explicit intent.
+ */
+export async function createManualProduct(input: {
+  name: string;
+  url: string;
+  category?: string;
+  description?: string;
+}): Promise<Product> {
+  const name = input.name.trim();
+  const url = input.url.trim();
+
+  if (!name) {
+    throw new Error("A product name is required.");
+  }
+  if (!isValidPortfolioUrl(url)) {
+    throw new Error("A valid http(s) URL is required.");
+  }
+
+  const existing = await getProductByName(name);
+  if (existing) {
+    throw new Error(`A product named "${name}" already exists.`);
+  }
+
+  const db = await getDb();
+  const id = randomUUID();
+
+  await db.execute({
+    sql: `
+      INSERT INTO products (
+        id, name, url, status, asset_type, category, description, approval_status
+      )
+      VALUES (
+        @id, @name, @url, 'active', 'product', @category, @description, 'approved'
+      )
+    `,
+    args: {
+      id,
+      name,
+      url,
+      category: input.category?.trim() || "unknown",
+      description: input.description?.trim() || null,
+    },
+  });
+
+  const product = await getProductByName(name);
+  if (!product) {
+    throw new Error(`Product "${name}" was created but could not be retrieved afterward.`);
+  }
   return product;
 }

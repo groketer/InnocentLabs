@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
-import { listProducts, getLatestWebsiteAuditResult } from "@/lib/models/products";
+import { NextRequest, NextResponse } from "next/server";
+import { listProducts, getLatestWebsiteAuditResult, createManualProduct } from "@/lib/models/products";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,3 +31,30 @@ export async function GET() {
     );
   }
 }
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+
+    if (typeof body?.name !== "string" || typeof body?.url !== "string") {
+      return NextResponse.json(
+        { error: "name and url are required." },
+        { status: 400 }
+      );
+    }
+
+    const product = await createManualProduct({
+      name: body.name,
+      url: body.url,
+      category: typeof body.category === "string" ? body.category : undefined,
+      description: typeof body.description === "string" ? body.description : undefined,
+    });
+
+    return NextResponse.json({ product });
+  } catch (error) {
+    console.error("[api/products] POST failed:", error);
+    const message = error instanceof Error ? error.message : "Could not create product.";
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+

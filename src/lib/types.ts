@@ -150,6 +150,7 @@ export interface Product {
   geographic_focus: string | null;
   campaign_paused: boolean;
   supplementary_knowledge: string | null;
+  approval_status: "pending" | "approved";
   last_audited_at: string | null;
   created_at: string;
   updated_at: string;

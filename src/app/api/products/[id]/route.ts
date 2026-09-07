@@ -4,6 +4,7 @@ import {
   updateProductGeographicFocus,
   updateProductCampaignPaused,
   updateProductSupplementaryKnowledge,
+  deleteProduct,
 } from "@/lib/models/products";
 
 export const runtime = "nodejs";
@@ -53,6 +54,21 @@ export async function PATCH(
     console.error("[api/products/[id]] PATCH failed:", error);
     const message =
       error instanceof Error ? error.message : "Could not update product.";
+    const status = message === "Product not found." ? 404 : 400;
+    return NextResponse.json({ error: message }, { status });
+  }
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    await deleteProduct(params.id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("[api/products/[id]] DELETE failed:", error);
+    const message = error instanceof Error ? error.message : "Could not delete product.";
     const status = message === "Product not found." ? 404 : 400;
     return NextResponse.json({ error: message }, { status });
   }

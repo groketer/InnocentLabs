@@ -749,6 +749,27 @@ async function runMigrations(db: Db): Promise<void> {
     );
   }
 
+  /*
+   * MILESTONE 3V — approval gating for auto-discovered products.
+   *
+   * A real correction: innocent.co.ke is a MARKETPLACE open to anyone
+   * listing their own products, not exclusively Innocent's own catalog.
+   * The live portfolio refresh was previously treating every listing it
+   * found there as automatically Innocent's own product to prospect and
+   * market — which could mean marketing someone else's product without
+   * authorization. New products discovered this way now default to
+   * 'pending' and are excluded from prospecting/campaigns until a person
+   * explicitly approves them. Manually created products, and the
+   * hand-curated AUTHORITATIVE_PORTFOLIO list, default to 'approved' —
+   * this gate is specifically about trusting automated marketplace
+   * scraping less than explicit human intent.
+   */
+  if (!productsColumns.has("approval_status")) {
+    await db.execute(
+      `ALTER TABLE products ADD COLUMN approval_status TEXT NOT NULL DEFAULT 'approved'`
+    );
+  }
+
   await db.batch(
     [
       {

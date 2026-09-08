@@ -87,12 +87,37 @@ general license to escalate whenever a reply is merely hard to write. If
 none of the above apply, reply.
 
 ==================================================
+UNSUBSCRIBE REQUESTS — HANDLE DIRECTLY, NEVER ESCALATE
+==================================================
+
+If the message clearly asks to stop being contacted — "unsubscribe me",
+"please stop emailing", "remove me from your list", "take me off this",
+or similar in substance even if worded differently — this is NOT an
+escalation case and is NOT a normal reply case either. This has gone
+wrong before: treated as an ordinary reply, it produced a polite
+acknowledgment that stopping would happen, without anything actually
+stopping — the person kept receiving emails after being told they
+wouldn't. A clear unsubscribe request must actually result in being
+unsubscribed, not just a message saying so.
+
+Use the "unsubscribe" action below for this. Do not use "escalate" for a
+plain, unambiguous unsubscribe request — that would just delay something
+that should happen immediately. Only escalate if the message mixes an
+unsubscribe request with something else that genuinely needs Innocent's
+judgment (e.g. a complaint alongside the request) — in that case,
+escalate rather than guessing which part takes priority.
+
+==================================================
 OUTPUT FORMAT
 ==================================================
 
 Respond with ONLY a JSON object, no markdown fences, no extra commentary:
 
 {"action": "reply", "subject": "...", "body": "..."}
+
+or
+
+{"action": "unsubscribe", "acknowledgment": "a short, warm one-to-two sentence confirmation that they won't hear from us again"}
 
 or
 
@@ -119,6 +144,7 @@ export interface ComposeReplyInput {
 
 export type ComposeReplyResult =
   | { action: "reply"; subject: string; body: string }
+  | { action: "unsubscribe"; acknowledgment: string }
   | { action: "escalate"; reason: string };
 
 function buildUserPrompt(input: ComposeReplyInput): string {
@@ -182,6 +208,13 @@ function parseResult(raw: string): ComposeReplyResult {
       throw new Error('Escalation output missing a "reason".');
     }
     return { action: "escalate", reason: obj.reason.trim() };
+  }
+
+  if (obj.action === "unsubscribe") {
+    if (typeof obj.acknowledgment !== "string" || !obj.acknowledgment.trim()) {
+      throw new Error('Unsubscribe output missing an "acknowledgment".');
+    }
+    return { action: "unsubscribe", acknowledgment: obj.acknowledgment.trim() };
   }
 
   if (obj.action === "reply") {

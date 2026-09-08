@@ -25,6 +25,12 @@ export interface FetchedInboundMessage {
   isAutoSubmitted: boolean;
 }
 
+// Bounded per check so a large backlog is cleared incrementally across
+// several checks rather than causing every single check to time out
+// trying to process all of it at once. 25 messages, fully parsed, is
+// comfortably within a serverless function's execution window.
+const INBOX_CHECK_BATCH_SIZE = 25;
+
 export function isImapConfigured(): boolean {
   return Boolean(
     process.env.IMAP_HOST && process.env.IMAP_USER && process.env.IMAP_PASSWORD
@@ -66,9 +72,26 @@ export async function fetchUnseenMessages(): Promise<FetchedInboundMessage[]> {
     const lock = await client.getMailboxLock("INBOX");
 
     try {
+      // MILESTONE 3X — a real incident this fixes: a backlog of unread
+      // messages (bounces piling up unprocessed) meant every check tried
+      // to fetch and parse the ENTIRE backlog in one serverless function
+      // invocation, exceeded the execution time limit, and timed out —
+      // making zero progress, every single time, forever, since nothing
+      // ever got marked \Seen. Capping how many get processed per check
+      // means every run makes real, bounded progress regardless of how
+      // large the backlog is; a big backlog just takes several checks to
+      // clear rather than never clearing at all.
+      const uids = await client.search({ seen: false }, { uid: true });
+      const batch = (uids || []).slice(0, INBOX_CHECK_BATCH_SIZE);
+
+      if (batch.length === 0) {
+        return [];
+      }
+
       for await (const msg of client.fetch(
-        { seen: false },
-        { source: true, uid: true }
+        batch,
+        { source: true, uid: true },
+        { uid: true }
       )) {
         if (!msg.source) continue;
 

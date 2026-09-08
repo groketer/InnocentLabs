@@ -41,6 +41,7 @@ export function FollowUpsContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [runningNow, setRunningNow] = useState(false);
+  const [checkingInbox, setCheckingInbox] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<ConversationItem[] | null>(null);
   const [conversationError, setConversationError] = useState<string | null>(null);
@@ -123,6 +124,23 @@ export function FollowUpsContent() {
     }
   }
 
+  async function checkInboxNow() {
+    setCheckingInbox(true);
+    setNotice(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/followups/check-inbox-now", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not check the inbox.");
+      setNotice("Inbox checked — refresh in a moment to see any new replies or bounces.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not check the inbox.");
+    } finally {
+      setCheckingInbox(false);
+    }
+  }
+
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -141,6 +159,13 @@ export function FollowUpsContent() {
           >
             Download CSV
           </a>
+          <button
+            onClick={checkInboxNow}
+            disabled={checkingInbox}
+            className="rounded-md border border-sky-500/40 px-3 py-2 text-xs font-medium text-sky-300 transition-colors hover:bg-sky-500/10 disabled:opacity-50"
+          >
+            {checkingInbox ? "Checking…" : "Check inbox now"}
+          </button>
           <button
             onClick={runNow}
             disabled={runningNow}

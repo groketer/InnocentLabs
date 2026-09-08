@@ -93,7 +93,23 @@ export async function processInboundEmail(): Promise<void> {
   try {
     messages = await fetchUnseenMessages();
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     console.error("[inboundProcessor] Could not check inbox:", error);
+    // MILESTONE 3X — this used to be console-only, meaning a real,
+    // ongoing failure (e.g. the timeout this batch-size fix addresses)
+    // was completely invisible in the app itself — nobody checks
+    // Vercel's function logs day to day. Now it shows up in Activity,
+    // where it's actually seen.
+    try {
+      await logActivity({
+        user_id: LOCAL_USER_ID,
+        task_id: null,
+        event_type: "TASK_FAILED",
+        message: `Inbox check failed: ${message}`,
+      });
+    } catch {
+      // Never let a logging failure mask the original error path.
+    }
     return;
   }
 
@@ -288,6 +304,65 @@ async function processOneMessage(
       handled: "escalated",
       note: decision.reason,
     });
+    return;
+  }
+
+  if (decision.action === "unsubscribe") {
+    // The actual fix for a real incident: this must genuinely unsubscribe
+    // the prospect, not just send a message saying it will happen. The
+    // acknowledgment reply and the real database change happen together —
+    // never one without the other.
+    const unsubscribeToken = prospect.unsubscribe_token ?? undefined;
+
+    await updateProspectSequence(LOCAL_USER_ID, prospect.id, {
+      sequence_status: "unsubscribed",
+      next_send_at: null,
+    });
+
+    if (unsubscribeToken) {
+      const sendResult = await sendEmail({
+        to: prospect.email as string,
+        subject: `Re: ${message.subject}`,
+        body: decision.acknowledgment,
+        unsubscribeToken,
+        recipientName: prospect.prospect_type === "person" ? prospect.name : undefined,
+        inReplyTo: message.messageId ?? undefined,
+      });
+
+      if (sendResult.success) {
+        await recordEmailSend({
+          user_id: LOCAL_USER_ID,
+          prospect_id: prospect.id,
+          step: 0,
+          subject: `Re: ${message.subject}`,
+          body: sendResult.finalBody,
+          status: "sent",
+          direction: "reply",
+          message_id: sendResult.messageId,
+          in_reply_to: message.messageId ?? undefined,
+        });
+      }
+    }
+
+    await recordInboundEmail({
+      user_id: LOCAL_USER_ID,
+      prospect_id: prospect.id,
+      message_id: message.messageId,
+      from_address: message.fromAddress,
+      subject: message.subject,
+      body: message.text,
+      classification: "reply",
+      handled: "replied",
+      note: "Unsubscribe request detected and processed automatically.",
+    });
+
+    await logActivity({
+      user_id: LOCAL_USER_ID,
+      task_id: null,
+      event_type: "TASK_COMPLETED",
+      message: `${prospect.name} asked to be unsubscribed — done automatically.`,
+    });
+
     return;
   }
 

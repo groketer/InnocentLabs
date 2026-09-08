@@ -2569,6 +2569,25 @@ IMPORTANT:
   the Innocent Labs portfolio or team. Prospecting always looks outward, at
   the market Innocent Labs could sell to — never inward at Innocent Labs' own
   ecosystem.
+- A prospect is NEVER a competitor — a company or individual that OFFERS THE
+  SAME TYPE OF SOLUTION as this product, to the same kind of customer. If
+  this product is an AI tool or platform, a company that itself sells AI
+  tools or AI solutions is a peer/competitor, not a prospect — even if their
+  own marketing mentions "AI" prominently, even if they seem well-resourced
+  and reachable. This has gone wrong before: prospecting for an AI product
+  surfaced other AI solution providers, who need the same kind of customer
+  this product is trying to reach, not this product itself. Before including
+  someone, ask: would they realistically be a BUYER/USER of this product, or
+  are they trying to sell something similar to the same audience? Only the
+  former is a real prospect.
+  This rule is about competing on the SAME side of a transaction, not about
+  topical overlap — a book about business, sold to a general audience
+  including other authors and writers, is not "competing" with those authors
+  the way an AI tool would compete with another AI tool vendor; a reader is
+  a reader regardless of what they themselves have written. Apply the
+  competitor test based on whether the prospect would be a genuine customer
+  or a business trying to win the same customers, not based on shared
+  keywords or industry labels.
 - Prospects may be INDIVIDUALS or ORGANIZATIONS.
 - Do not assume an organization is required.
 - Actually perform web research.

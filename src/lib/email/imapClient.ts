@@ -36,7 +36,7 @@ export interface FetchedInboundMessage {
 // of any maxDuration set in code, and connecting, fetching, and parsing
 // each message via IMAP is real, variable-latency work, not something
 // safe to assume completes quickly. 10 is conservative on purpose.
-const INBOX_CHECK_BATCH_SIZE = 10;
+export const INBOX_CHECK_BATCH_SIZE = 10;
 
 export function isImapConfigured(): boolean {
   return Boolean(

@@ -18,7 +18,7 @@
  * index on inbound_emails.message_id), regardless of how it's handled.
  */
 
-import { fetchUnseenMessages, isImapConfigured } from "./imapClient";
+import { fetchUnseenMessages, isImapConfigured, INBOX_CHECK_BATCH_SIZE } from "./imapClient";
 import { looksLikeBounce, extractBouncedAddress } from "./bounceDetection";
 import { composeReply } from "./composeReply";
 import { sendEmail } from "./sendEmail";
@@ -78,15 +78,15 @@ async function escalateToHuman(
  * Safe to call frequently — a no-op in well under a second if IMAP isn't
  * configured or there's nothing new.
  */
-export async function processInboundEmail(): Promise<void> {
+export async function processInboundEmail(): Promise<{ processed: number; batchWasFull: boolean }> {
   if (!isImapConfigured()) {
-    return;
+    return { processed: 0, batchWasFull: false };
   }
 
   const settings = await getSettings();
 
   if (!settings.autonomous_replies) {
-    return;
+    return { processed: 0, batchWasFull: false };
   }
 
   let messages;
@@ -110,11 +110,11 @@ export async function processInboundEmail(): Promise<void> {
     } catch {
       // Never let a logging failure mask the original error path.
     }
-    return;
+    return { processed: 0, batchWasFull: false };
   }
 
   if (messages.length === 0) {
-    return;
+    return { processed: 0, batchWasFull: false };
   }
 
   const knownEmails = await listAllProspectEmails(LOCAL_USER_ID);
@@ -129,6 +129,8 @@ export async function processInboundEmail(): Promise<void> {
       );
     }
   }
+
+  return { processed: messages.length, batchWasFull: messages.length >= INBOX_CHECK_BATCH_SIZE };
 }
 
 async function processOneMessage(

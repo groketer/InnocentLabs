@@ -22,8 +22,8 @@ export async function POST() {
   }
 
   try {
-    await processInboundEmail();
-    return NextResponse.json({ success: true });
+    const result = await processInboundEmail();
+    return NextResponse.json({ success: true, ...result });
   } catch (error) {
     console.error("[api/followups/check-inbox-now] POST failed:", error);
     return NextResponse.json(

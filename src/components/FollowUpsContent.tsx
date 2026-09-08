@@ -128,26 +128,60 @@ export function FollowUpsContent() {
     setCheckingInbox(true);
     setNotice(null);
     setError(null);
-    try {
-      const res = await fetch("/api/followups/check-inbox-now", { method: "POST" });
-      const rawText = await res.text();
 
-      let data: { error?: string } | null = null;
-      try {
-        data = JSON.parse(rawText);
-      } catch {
-        // The response wasn't JSON at all — the app's own code always
-        // returns JSON, even on error, so this means the platform itself
-        // killed the request before the app could respond (a function
-        // execution timeout is the most likely cause). Give a real,
-        // actionable message instead of a raw parse error.
-        throw new Error(
-          "The check timed out before finishing — this usually means there's still a large backlog to work through, or the hosting plan's execution time limit was hit. Try clicking it again; each click makes real progress on a smaller batch."
-        );
+    // MILESTONE 3Y — a real usability problem this fixes: one click used
+    // to check one small batch, meaning a real backlog needed dozens of
+    // manual clicks to clear. This now keeps going on its own — including
+    // treating an individual timeout as partial progress worth continuing
+    // from, not a failure to stop at — up to a safety cap so a genuinely
+    // stuck state can't loop forever.
+    const MAX_ROUNDS = 30;
+    let totalProcessed = 0;
+    let round = 0;
+
+    try {
+      while (round < MAX_ROUNDS) {
+        round++;
+        setNotice(`Checking inbox… ${totalProcessed} processed so far (round ${round}).`);
+
+        const res = await fetch("/api/followups/check-inbox-now", { method: "POST" });
+        const rawText = await res.text();
+
+        let data: { error?: string; processed?: number; batchWasFull?: boolean } | null = null;
+        try {
+          data = JSON.parse(rawText);
+        } catch {
+          // Not JSON — the platform itself killed this specific round
+          // (most likely a function execution timeout), not the app's own
+          // code. Whatever was fetched before the kill is still marked
+          // read on the mail server, so this is real partial progress,
+          // not a failure — keep going rather than stopping here.
+          continue;
+        }
+
+        if (!res.ok) {
+          throw new Error(data?.error || "Could not check the inbox.");
+        }
+
+        totalProcessed += data?.processed ?? 0;
+
+        if (!data?.batchWasFull) {
+          // Fewer than a full batch came back (or none at all) — caught up.
+          break;
+        }
+
+        // A brief pause between rounds — if the mail server is genuinely
+        // struggling (which is a plausible cause of an individual round
+        // timing out), hammering it again immediately with no gap at all
+        // would make that worse, not better.
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
 
-      if (!res.ok) throw new Error(data?.error || "Could not check the inbox.");
-      setNotice("Inbox checked — refresh in a moment to see any new replies or bounces.");
+      setNotice(
+        totalProcessed > 0
+          ? `Inbox checked — ${totalProcessed} message${totalProcessed === 1 ? "" : "s"} processed. Refresh in a moment to see any new replies or bounces.`
+          : "Inbox checked — nothing new."
+      );
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not check the inbox.");

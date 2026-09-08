@@ -45,9 +45,20 @@ async function isAuthorized(req: NextRequest, rawBody: string): Promise<boolean>
   const signature = req.headers.get("upstash-signature");
 
   if (signature && process.env.QSTASH_CURRENT_SIGNING_KEY) {
+    // MILESTONE 3Z-11 — defensive trimming. My own verification code is
+    // proven correct (tested directly against a real, correctly-signed
+    // JWT), the key format and environment scope are both confirmed
+    // right, yet verification still fails — the remaining likely cause
+    // is an invisible whitespace character from a copy-paste, which
+    // breaks exact HMAC matching without being visible anywhere. Trimming
+    // here removes this entire class of problem going forward,
+    // regardless of how the values get pasted in the future.
+    const currentSigningKey = process.env.QSTASH_CURRENT_SIGNING_KEY.trim();
+    const nextSigningKey = (process.env.QSTASH_NEXT_SIGNING_KEY ?? "").trim();
+
     const receiver = new Receiver({
-      currentSigningKey: process.env.QSTASH_CURRENT_SIGNING_KEY,
-      nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY ?? "",
+      currentSigningKey,
+      nextSigningKey,
     });
 
     // MILESTONE 3Z-9 — the length alone (32, unchanged across a full key
@@ -60,6 +71,14 @@ async function isAuthorized(req: NextRequest, rawBody: string): Promise<boolean>
       if (value.length <= 10) return `${value.length} chars, too short to preview safely`;
       return `${value.slice(0, 6)}...${value.slice(-4)} (${value.length} chars)`;
     };
+
+    const rawCurrentLength = process.env.QSTASH_CURRENT_SIGNING_KEY.length;
+    const trimmedCurrentLength = currentSigningKey.length;
+    if (rawCurrentLength !== trimmedCurrentLength) {
+      console.warn(
+        `[api/tasks/tick] QSTASH_CURRENT_SIGNING_KEY had whitespace trimmed: ${rawCurrentLength} chars raw -> ${trimmedCurrentLength} chars trimmed. This was very likely the actual bug.`
+      );
+    }
 
     // MILESTONE 3Z-8 — every official Upstash example (TS, Python, Go
     // SDKs) includes a url parameter; our code never did, and

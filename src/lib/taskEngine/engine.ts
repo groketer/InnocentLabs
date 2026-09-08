@@ -665,7 +665,7 @@ async function runInboundEmailCheckIfDue(): Promise<void> {
 
 const LAST_TICK_KEY = "last_tick_at";
 
-async function recordTickTimestamp(): Promise<void> {
+export async function recordTickTimestamp(): Promise<void> {
   const db = await getDb();
   await db.execute({
     sql: `

@@ -27,10 +27,6 @@ export interface FetchedInboundMessage {
 
 // Bounded per check so a large backlog is cleared incrementally across
 // several checks rather than causing every single check to time out
-// trying to process all of it at once. 25 messages, fully parsed, is
-// comfortably within a serverless function's execution window.
-// Bounded per check so a large backlog is cleared incrementally across
-// several checks rather than causing every single check to time out
 // trying to process all of it at once. Kept deliberately small — Vercel's
 // free/Hobby tier hard-caps function execution at 10 seconds regardless
 // of any maxDuration set in code, and connecting, fetching, and parsing
@@ -66,6 +62,20 @@ async function connect(): Promise<ImapFlow> {
     connectionTimeout: 15_000,
     greetingTimeout: 10_000,
     socketTimeout: 30_000,
+  });
+
+  // MILESTONE 3Z-7 — the actual root cause, found directly from a real
+  // "Uncaught Exception: Socket timeout" in production logs, not
+  // guessed: ImapFlow is an EventEmitter, and when its underlying TLS
+  // socket has a problem (like a timeout) after the main operation has
+  // already moved on, it emits an 'error' event. Node's EventEmitter has
+  // a hard rule: an 'error' event with no registered listener is thrown
+  // as an uncaught exception — capable of crashing the entire process,
+  // not just failing the one IMAP operation in flight. This had no
+  // listener at all. Registering one, even just to log, is what stops a
+  // stray socket problem from taking down the whole serverless instance.
+  client.on("error", (err) => {
+    console.warn("[imapClient] Socket-level error (contained, not fatal):", err);
   });
 
   await client.connect();

@@ -72,7 +72,7 @@ export function DashboardContent() {
           fetch("/api/tasks?topLevelOnly=true&limit=20"),
           fetch("/api/stats"),
           fetch("/api/usage"),
-          fetch("/api/tick-status"),
+          fetch("/api/tick-status", { cache: "no-store" }),
         ]);
         const tasksData = await tasksRes.json();
         const statsData = await statsRes.json();

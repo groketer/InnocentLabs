@@ -138,6 +138,73 @@ function resolveConnectionString(): string {
   return url;
 }
 
+/**
+ * MILESTONE 3Z-4 — retry transient connection failures.
+ *
+ * Neon's serverless compute scales down when idle to save cost, and the
+ * first request after a quiet period can occasionally fail while it
+ * wakes back up — a known, common characteristic of serverless
+ * Postgres, not a bug in this driver or the app. The errors this
+ * produces are specific and recognizable ("fetch failed", a closed
+ * socket, a connection timeout) and are exactly the kind of failure
+ * that typically succeeds on a retry a moment later, once the compute
+ * is actually awake. This is the standard, correct fix for that pattern
+ * — not a workaround for a real bug, but resilience for a real,
+ * expected characteristic of the infrastructure.
+ */
+function isTransientConnectionError(error: unknown): boolean {
+  // Match against the error's full string representation rather than
+  // assuming a specific nesting shape — the real error seen in
+  // production nests as NeonDbError -> sourceError (TypeError) -> cause
+  // (SocketError), and relying on a guessed exact path is more fragile
+  // than just checking whether the recognizable substrings appear
+  // anywhere in the error when stringified, including its properties.
+  let combined = "";
+  try {
+    combined = JSON.stringify(error, Object.getOwnPropertyNames(error as object)).toLowerCase();
+  } catch {
+    combined = String(error).toLowerCase();
+  }
+  if (error instanceof Error) {
+    combined += ` ${error.message} ${error.stack ?? ""}`.toLowerCase();
+  }
+
+  return (
+    combined.includes("fetch failed") ||
+    combined.includes("other side closed") ||
+    combined.includes("etimedout") ||
+    combined.includes("econnreset") ||
+    combined.includes("socket")
+  );
+}
+
+async function withConnectionRetry<T>(operation: () => Promise<T>): Promise<T> {
+  const MAX_ATTEMPTS = 3;
+  const RETRY_DELAY_MS = 400;
+
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      if (!isTransientConnectionError(error) || attempt === MAX_ATTEMPTS) {
+        throw error;
+      }
+
+      console.warn(
+        `[db] Transient connection error (attempt ${attempt}/${MAX_ATTEMPTS}), retrying in ${RETRY_DELAY_MS}ms:`,
+        error instanceof Error ? error.message : error
+      );
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    }
+  }
+
+  throw lastError;
+}
+
 async function createConnection(): Promise<Db> {
   // fullResults: true makes every query return { rows, rowCount, ... }
   // (matching what our QueryResult/rowsAffected shape expects) instead of
@@ -153,7 +220,7 @@ async function createConnection(): Promise<Db> {
         typeof input === "string" ? { sql: input, args: undefined } : input;
 
       const { text, values } = toPositional(sqlText, args);
-      const result = await sql(text, values);
+      const result = await withConnectionRetry(() => sql(text, values));
 
       return {
         rows: result.rows as T[],
@@ -170,7 +237,7 @@ async function createConnection(): Promise<Db> {
         return sql(text, values);
       });
 
-      await sql.transaction(queries);
+      await withConnectionRetry(() => sql.transaction(queries));
     },
   };
 

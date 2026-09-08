@@ -25,7 +25,11 @@ export function TaskDetailContent({ taskId }: { taskId: string }) {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 3000);
+    // MILESTONE 3Z-3 — reduced from 3s to 8s, part of an app-wide load
+    // reduction (see EngineTicker.tsx). Kept faster than the general 20s
+    // used elsewhere since this page is specifically for watching one
+    // task's live progress, where responsiveness matters more.
+    const interval = setInterval(load, 8000);
     return () => clearInterval(interval);
   }, [load]);
 

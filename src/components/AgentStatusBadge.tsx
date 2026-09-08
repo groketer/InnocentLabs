@@ -17,6 +17,14 @@ const STATE_STYLE: Record<AgentStatusState, { icon: string; className: string }>
 export function AgentStatusBadge() {
   const [status, setStatus] = useState<AgentStatus | null>(null);
 
+  // MILESTONE 3Z-3 — reduced from 4s to 20s, same reasoning as
+  // EngineTicker: a small status badge doesn't need sub-5-second
+  // freshness, and this runs on every page load alongside EngineTicker's
+  // own polling, so together they were generating real, avoidable
+  // database load — roughly 30 requests/minute from a single open tab
+  // before this change.
+  const POLL_INTERVAL_MS = 20_000;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -32,7 +40,7 @@ export function AgentStatusBadge() {
     }
 
     poll();
-    const interval = setInterval(poll, 4000);
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
       clearInterval(interval);

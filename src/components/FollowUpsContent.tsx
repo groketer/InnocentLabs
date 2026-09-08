@@ -60,7 +60,9 @@ export function FollowUpsContent() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 5000);
+    // MILESTONE 3Z-3 — reduced from 5s, part of an app-wide load
+    // reduction; see EngineTicker.tsx for the full reasoning.
+    const interval = setInterval(load, 20_000);
     return () => clearInterval(interval);
   }, []);
 

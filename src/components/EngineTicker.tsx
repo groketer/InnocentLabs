@@ -26,8 +26,16 @@ import { useEffect } from "react";
  * progresses while a tab is open (or once a day via /api/cron/daily). See
  * the module doc comment in src/lib/taskEngine/engine.ts for the full
  * picture.
+ *
+ * MILESTONE 3Z-3 — reduced from 4s to 20s. With QStash now confirmed
+ * running independently (ticking on its own schedule regardless of
+ * whether a browser tab is open), this component's job shrinks from
+ * "the only thing driving ticks" to "extra responsiveness on top of
+ * that while a tab happens to be open" — which doesn't need sub-5-second
+ * frequency to be useful, and a real database load reduction is worth
+ * more than that marginal responsiveness at this point.
  */
-const TICK_INTERVAL_MS = 4000;
+const TICK_INTERVAL_MS = 20_000;
 
 export default function EngineTicker() {
   useEffect(() => {

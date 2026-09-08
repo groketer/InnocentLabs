@@ -93,7 +93,14 @@ export function DashboardContent() {
     }
 
     load();
-    const interval = setInterval(load, 4000);
+    // MILESTONE 3Z-3 — reduced from 4s to 20s. This fires four separate
+    // database-backed calls together (tasks, stats, usage, tick-status)
+    // every cycle — at 4s that's 60 requests/minute from a single open
+    // Dashboard tab, likely the single largest contributor to the
+    // database load behind the connectivity failures investigated in
+    // this session. A live-updating dashboard doesn't need sub-5-second
+    // freshness to be useful.
+    const interval = setInterval(load, 20_000);
     return () => {
       cancelled = true;
       clearInterval(interval);

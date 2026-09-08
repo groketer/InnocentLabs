@@ -54,6 +54,18 @@ async function connect(): Promise<ImapFlow> {
       pass: process.env.IMAP_PASSWORD as string,
     },
     logger: false,
+    // MILESTONE 3Z-5 — a real bug this fixes, found directly in
+    // production logs: ImapFlow's own default connectionTimeout is
+    // 90 seconds, longer than Vercel's 60-second function limit. That
+    // means a slow or unreachable mail server never got a chance to
+    // fail on its own terms — Vercel just killed the function first,
+    // every single time, burning the full budget with no clean error.
+    // These are deliberately short: a working mail server responds in
+    // a few seconds, not tens of seconds, so failing fast here is a
+    // real fix, not just a tighter number.
+    connectionTimeout: 15_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 30_000,
   });
 
   await client.connect();

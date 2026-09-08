@@ -150,7 +150,16 @@ export async function fetchUnseenMessages(): Promise<FetchedInboundMessage[]> {
       lock.release();
     }
   } finally {
-    await client.logout();
+    // If the connection has already been lost (a network blip, the
+    // server closing it after the main operation completed), logout
+    // itself throws "Connection not available" — but the connection is
+    // going away regardless, whether this succeeds gracefully or not,
+    // so a failed logout isn't a real problem worth surfacing as an
+    // error. This was previously bubbling up as a top-level failure for
+    // what's actually a harmless, already-closed connection.
+    await client.logout().catch((err) => {
+      console.warn("[imapClient] logout() failed (connection likely already closed):", err instanceof Error ? err.message : err);
+    });
   }
 
   return messages;

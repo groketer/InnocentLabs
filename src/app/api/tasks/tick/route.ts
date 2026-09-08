@@ -45,19 +45,53 @@ async function isAuthorized(req: NextRequest, rawBody: string): Promise<boolean>
   const signature = req.headers.get("upstash-signature");
 
   if (signature && process.env.QSTASH_CURRENT_SIGNING_KEY) {
+    const receiver = new Receiver({
+      currentSigningKey: process.env.QSTASH_CURRENT_SIGNING_KEY,
+      nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY ?? "",
+    });
+
+    // MILESTONE 3Z-8 — every official Upstash example (TS, Python, Go
+    // SDKs) includes a url parameter; our code never did, and
+    // verification has been failing consistently rather than
+    // intermittently. Worth aligning with documented usage — but
+    // defensively: if req.url doesn't exactly match what QStash actually
+    // signed against (a real possibility depending on how Vercel
+    // forwards the request), a strict url check could turn a previously
+    // working path into a strictly-failing one. Try with it; if that
+    // specific attempt fails, retry without it before giving up, so this
+    // can only help, never regress something that worked before.
     try {
-      const receiver = new Receiver({
-        currentSigningKey: process.env.QSTASH_CURRENT_SIGNING_KEY,
-        nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY ?? "",
-      });
-      const valid = await receiver.verify({ signature, body: rawBody });
+      const valid = await receiver.verify({ signature, body: rawBody, url: req.url });
       if (valid) return true;
     } catch (error) {
-      console.error("[api/tasks/tick] QStash signature verification failed:", error);
-      // Fall through to the session-cookie check rather than failing
-      // outright — a malformed/expired QStash signature shouldn't also
-      // block a legitimate browser-originated request.
+      console.error(
+        "[api/tasks/tick] QStash verify WITH url threw:",
+        error instanceof Error ? error.message : error,
+        `| url used: ${req.url}`
+      );
     }
+
+    try {
+      const validWithoutUrl = await receiver.verify({ signature, body: rawBody });
+      if (validWithoutUrl) {
+        console.warn(
+          "[api/tasks/tick] QStash verify succeeded WITHOUT url but failed WITH it — " +
+            `req.url (${req.url}) likely doesn't match what QStash actually signed against.`
+        );
+        return true;
+      }
+    } catch (error) {
+      console.error(
+        "[api/tasks/tick] QStash verify WITHOUT url also threw:",
+        error instanceof Error ? error.message : error,
+        `| current key present: ${Boolean(process.env.QSTASH_CURRENT_SIGNING_KEY)}, ` +
+          `next key present: ${Boolean(process.env.QSTASH_NEXT_SIGNING_KEY)}, ` +
+          `current key length: ${process.env.QSTASH_CURRENT_SIGNING_KEY?.length ?? 0}`
+      );
+    }
+    // Fall through to the session-cookie check rather than failing
+    // outright — a malformed/expired QStash signature shouldn't also
+    // block a legitimate browser-originated request.
   }
 
   const password = process.env.APP_PASSWORD;

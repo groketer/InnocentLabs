@@ -697,14 +697,22 @@ export async function getLastTickInfo(): Promise<{ lastTickAt: string | null; se
 }
 
 export async function tick(): Promise<void> {
-  // MILESTONE 3Z — a real, recurring source of uncertainty this fixes:
-  // "is QStash actually set up correctly" was previously unanswerable
-  // without checking Upstash's own dashboard. Recording every tick's
-  // timestamp here, cheaply, means the app itself can answer that
-  // question directly and at any time — see /api/tick-status.
-  recordTickTimestamp().catch(() => {
-    // Never let this diagnostic-only write block or fail an actual tick.
-  });
+  // MILESTONE 3Z-2 — a real bug this fixes, found by direct root-cause
+  // investigation, not guessing: this used to be fire-and-forget
+  // (called without awaiting), which is unsafe on Vercel specifically —
+  // once a serverless function's response is sent, its execution
+  // environment can be frozen or killed immediately, including any
+  // in-flight work that wasn't explicitly awaited. That's exactly why
+  // this write was unreliable: it was racing the function's own
+  // shutdown and losing unpredictably, not failing outright. Awaiting
+  // it properly costs one cheap round-trip and makes it actually
+  // reliable. Still wrapped so a failure here can never block or crash
+  // the real tick work that follows.
+  try {
+    await recordTickTimestamp();
+  } catch (error) {
+    console.error("[engine] Could not record tick timestamp:", error);
+  }
 
   await recoverStaleRunningTasks();
   await runInboundEmailCheckIfDue();
@@ -806,7 +814,7 @@ export async function recoverInterruptedTasks(): Promise<void> {
  * fully functional; it is simply driven externally on Vercel (client
  * poller + daily cron) instead of by this loop.
  */
-export function startEngine(): void {
+export async function startEngine(): Promise<void> {
   if (global.__innocentIntelligenceEngineStarted) return;
   global.__innocentIntelligenceEngineStarted = true;
 
@@ -816,9 +824,15 @@ export function startEngine(): void {
   startAuditScheduler();
   startDeepQualificationScheduler();
 
-  recoverInterruptedTasks().catch((err) =>
-    console.error("[taskEngine] recoverInterruptedTasks() threw:", err)
-  );
+  // Same bug class as the tick-timestamp fix above, found during the same
+  // investigation: fire-and-forget is unsafe here too, since this runs
+  // before the Vercel early-return below and could be killed mid-flight
+  // the same way. Awaited properly for the same reason.
+  try {
+    await recoverInterruptedTasks();
+  } catch (err) {
+    console.error("[taskEngine] recoverInterruptedTasks() threw:", err);
+  }
 
   if (process.env.VERCEL) {
     console.log(

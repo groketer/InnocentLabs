@@ -11,7 +11,11 @@ export async function register() {
     const { startEngine } = await import("@/lib/taskEngine/engine");
     const { seedProductsIfEmpty } = await import("@/lib/models/products");
 
-    seedProductsIfEmpty();
-    startEngine();
+    // Same reasoning as the fixes inside startEngine() itself: awaiting
+    // properly (rather than fire-and-forget) means this can't be killed
+    // mid-flight by the serverless environment freezing after this
+    // module finishes initializing.
+    await seedProductsIfEmpty();
+    await startEngine();
   }
 }

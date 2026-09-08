@@ -130,7 +130,22 @@ export function FollowUpsContent() {
     setError(null);
     try {
       const res = await fetch("/api/followups/check-inbox-now", { method: "POST" });
-      const data = await res.json();
+      const rawText = await res.text();
+
+      let data: { error?: string } | null = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        // The response wasn't JSON at all — the app's own code always
+        // returns JSON, even on error, so this means the platform itself
+        // killed the request before the app could respond (a function
+        // execution timeout is the most likely cause). Give a real,
+        // actionable message instead of a raw parse error.
+        throw new Error(
+          "The check timed out before finishing — this usually means there's still a large backlog to work through, or the hosting plan's execution time limit was hit. Try clicking it again; each click makes real progress on a smaller batch."
+        );
+      }
+
       if (!res.ok) throw new Error(data?.error || "Could not check the inbox.");
       setNotice("Inbox checked — refresh in a moment to see any new replies or bounces.");
       await load();

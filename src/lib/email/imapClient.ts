@@ -29,7 +29,14 @@ export interface FetchedInboundMessage {
 // several checks rather than causing every single check to time out
 // trying to process all of it at once. 25 messages, fully parsed, is
 // comfortably within a serverless function's execution window.
-const INBOX_CHECK_BATCH_SIZE = 25;
+// Bounded per check so a large backlog is cleared incrementally across
+// several checks rather than causing every single check to time out
+// trying to process all of it at once. Kept deliberately small — Vercel's
+// free/Hobby tier hard-caps function execution at 10 seconds regardless
+// of any maxDuration set in code, and connecting, fetching, and parsing
+// each message via IMAP is real, variable-latency work, not something
+// safe to assume completes quickly. 10 is conservative on purpose.
+const INBOX_CHECK_BATCH_SIZE = 10;
 
 export function isImapConfigured(): boolean {
   return Boolean(

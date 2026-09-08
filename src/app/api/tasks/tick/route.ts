@@ -50,6 +50,17 @@ async function isAuthorized(req: NextRequest, rawBody: string): Promise<boolean>
       nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY ?? "",
     });
 
+    // MILESTONE 3Z-9 — the length alone (32, unchanged across a full key
+    // rotation) wasn't enough to diagnose this. A safe, partial preview
+    // — first/last few characters only, never the full secret — lets
+    // Innocent directly compare what's actually being read against what
+    // he pasted into Upstash, without exposing the real key anywhere.
+    const safePreview = (value: string | undefined): string => {
+      if (!value) return "(not set)";
+      if (value.length <= 10) return `${value.length} chars, too short to preview safely`;
+      return `${value.slice(0, 6)}...${value.slice(-4)} (${value.length} chars)`;
+    };
+
     // MILESTONE 3Z-8 — every official Upstash example (TS, Python, Go
     // SDKs) includes a url parameter; our code never did, and
     // verification has been failing consistently rather than
@@ -84,9 +95,9 @@ async function isAuthorized(req: NextRequest, rawBody: string): Promise<boolean>
       console.error(
         "[api/tasks/tick] QStash verify WITHOUT url also threw:",
         error instanceof Error ? error.message : error,
-        `| current key present: ${Boolean(process.env.QSTASH_CURRENT_SIGNING_KEY)}, ` +
-          `next key present: ${Boolean(process.env.QSTASH_NEXT_SIGNING_KEY)}, ` +
-          `current key length: ${process.env.QSTASH_CURRENT_SIGNING_KEY?.length ?? 0}`
+        `| currentSigningKey: ${safePreview(process.env.QSTASH_CURRENT_SIGNING_KEY)}, ` +
+          `nextSigningKey: ${safePreview(process.env.QSTASH_NEXT_SIGNING_KEY)}, ` +
+          `incoming signature header: ${safePreview(signature)}`
       );
     }
     // Fall through to the session-cookie check rather than failing

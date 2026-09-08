@@ -663,7 +663,49 @@ async function runInboundEmailCheckIfDue(): Promise<void> {
   }
 }
 
+const LAST_TICK_KEY = "last_tick_at";
+
+async function recordTickTimestamp(): Promise<void> {
+  const db = await getDb();
+  await db.execute({
+    sql: `
+      INSERT INTO app_meta (key, value) VALUES (?, ?)
+      ON CONFLICT (key) DO UPDATE SET value = excluded.value
+    `,
+    args: [LAST_TICK_KEY, new Date().toISOString()],
+  });
+}
+
+/**
+ * Read-side counterpart to recordTickTimestamp — how long ago tick() was
+ * last actually invoked, regardless of what it did once running. This
+ * directly answers "is QStash actually working": if it's been minutes,
+ * frequent external ticking is genuinely happening; if it's been close
+ * to a full day, the app is very likely only being driven by the
+ * once-daily cron.
+ */
+export async function getLastTickInfo(): Promise<{ lastTickAt: string | null; secondsAgo: number | null }> {
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `SELECT value FROM app_meta WHERE key = ?`,
+    args: [LAST_TICK_KEY],
+  });
+  const value = (result.rows[0] as unknown as { value: string } | undefined)?.value ?? null;
+  if (!value) return { lastTickAt: null, secondsAgo: null };
+  const secondsAgo = Math.round((Date.now() - new Date(value).getTime()) / 1000);
+  return { lastTickAt: value, secondsAgo };
+}
+
 export async function tick(): Promise<void> {
+  // MILESTONE 3Z — a real, recurring source of uncertainty this fixes:
+  // "is QStash actually set up correctly" was previously unanswerable
+  // without checking Upstash's own dashboard. Recording every tick's
+  // timestamp here, cheaply, means the app itself can answer that
+  // question directly and at any time — see /api/tick-status.
+  recordTickTimestamp().catch(() => {
+    // Never let this diagnostic-only write block or fail an actual tick.
+  });
+
   await recoverStaleRunningTasks();
   await runInboundEmailCheckIfDue();
 

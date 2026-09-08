@@ -50,10 +50,17 @@ interface UsageSummary {
   calls_today: number;
 }
 
+interface TickStatus {
+  lastTickAt: string | null;
+  secondsAgo: number | null;
+  interpretation: string;
+}
+
 export function DashboardContent() {
   const [tasks, setTasks] = useState<AgentTask[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [tickStatus, setTickStatus] = useState<TickStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,19 +68,22 @@ export function DashboardContent() {
 
     async function load() {
       try {
-        const [tasksRes, statsRes, usageRes] = await Promise.all([
+        const [tasksRes, statsRes, usageRes, tickRes] = await Promise.all([
           fetch("/api/tasks?topLevelOnly=true&limit=20"),
           fetch("/api/stats"),
           fetch("/api/usage"),
+          fetch("/api/tick-status"),
         ]);
         const tasksData = await tasksRes.json();
         const statsData = await statsRes.json();
         const usageData = await usageRes.json();
+        const tickData = await tickRes.json();
         if (!tasksRes.ok) throw new Error(tasksData?.error || "Could not load tasks.");
         if (!cancelled) {
           setTasks(tasksData.tasks);
           if (statsRes.ok) setStats(statsData.stats);
           if (usageRes.ok) setUsage(usageData.usage);
+          if (tickRes.ok) setTickStatus(tickData);
         }
       } catch (err) {
         if (!cancelled) {
@@ -136,6 +146,29 @@ export function DashboardContent() {
           ${usage.cost_this_month.toFixed(2)} this month
           {" · "}
           {usage.calls_today} call{usage.calls_today === 1 ? "" : "s"} today
+        </p>
+      )}
+
+      {tickStatus && (
+        <p
+          className={`mt-1 text-xs ${
+            tickStatus.secondsAgo !== null && tickStatus.secondsAgo < 5 * 60
+              ? "text-emerald-400/70"
+              : "text-amber-400/70"
+          }`}
+          title={tickStatus.interpretation}
+        >
+          {tickStatus.secondsAgo === null
+            ? "Automation status: no tick recorded yet"
+            : `Automation last checked in ${
+                tickStatus.secondsAgo < 60
+                  ? `${tickStatus.secondsAgo}s`
+                  : tickStatus.secondsAgo < 3600
+                    ? `${Math.round(tickStatus.secondsAgo / 60)}m`
+                    : `${Math.round(tickStatus.secondsAgo / 3600)}h`
+              } ago`}
+          {" — "}
+          {tickStatus.interpretation}
         </p>
       )}
 

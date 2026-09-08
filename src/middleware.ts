@@ -31,6 +31,12 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!api/cron|api/auth|api/tasks/tick|unsubscribe|login|_next/static|_next/image|favicon.ico).*)",
+    // MILESTONE 3Z-10 — added api/tick-status and api/debug to the
+    // exclusion list. Both are read-only (or self-contained) diagnostic
+    // endpoints exposing no sensitive data — just timestamps and status
+    // text — and testing them meaningfully requires visiting them
+    // directly, independent of whatever browser session state happens
+    // to exist at the time. Requiring login defeated that purpose.
+    "/((?!api/cron|api/auth|api/tasks/tick|api/tick-status|api/debug|unsubscribe|login|_next/static|_next/image|favicon.ico).*)",
   ],
 };

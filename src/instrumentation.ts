@@ -11,11 +11,28 @@ export async function register() {
     const { startEngine } = await import("@/lib/taskEngine/engine");
     const { seedProductsIfEmpty } = await import("@/lib/models/products");
 
-    // Same reasoning as the fixes inside startEngine() itself: awaiting
-    // properly (rather than fire-and-forget) means this can't be killed
-    // mid-flight by the serverless environment freezing after this
-    // module finishes initializing.
-    await seedProductsIfEmpty();
-    await startEngine();
+    // A real regression from an earlier fix, corrected here: awaiting
+    // these (instead of fire-and-forget) fixed a genuine race condition
+    // elsewhere, but doing so HERE without error handling meant any
+    // transient failure during boot — e.g. a momentary Neon connection
+    // hiccup on a cold start, which does happen occasionally and isn't
+    // itself a real problem — would throw all the way up through this
+    // instrumentation hook and crash Next.js's own server initialization
+    // entirely, taking down every single route, not just this one.
+    // Fire-and-forget was actually safer in this specific respect. The
+    // real fix is neither extreme: await for reliable ordering, but
+    // contain any failure here so it can never block the server from
+    // booting and handling real requests.
+    try {
+      await seedProductsIfEmpty();
+    } catch (error) {
+      console.error("[instrumentation] seedProductsIfEmpty() failed:", error);
+    }
+
+    try {
+      await startEngine();
+    } catch (error) {
+      console.error("[instrumentation] startEngine() failed:", error);
+    }
   }
 }

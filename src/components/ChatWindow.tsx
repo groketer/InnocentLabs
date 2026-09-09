@@ -24,10 +24,28 @@ export function ChatWindow() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // MILESTONE 4B — the actual root cause of "the agent keeps forgetting":
+  // this generated a brand-new random ID on every single page load, so
+  // the save/load mechanism below (which genuinely works) never had a
+  // matching ID to retrieve previous messages from — every visit looked
+  // like a first-ever conversation, even though messages were being
+  // saved correctly the whole time. Persisting the ID in localStorage
+  // means reopening the page reuses the same conversation and actually
+  // loads its history, the way it was always meant to.
   const conversationIdRef = useRef<string>(
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `conv-${Date.now()}`
+    (() => {
+      if (typeof window === "undefined") return `conv-${Date.now()}`;
+      const STORAGE_KEY = "innocent-intelligence-conversation-id";
+      const existing = window.localStorage.getItem(STORAGE_KEY);
+      if (existing) return existing;
+      const fresh =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `conv-${Date.now()}`;
+      window.localStorage.setItem(STORAGE_KEY, fresh);
+      return fresh;
+    })()
   );
 
   useEffect(() => {

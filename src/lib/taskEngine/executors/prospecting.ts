@@ -830,6 +830,62 @@ later-priority region. Do not surface a prospect from outside the stated
 region(s) for this product.`
     : ""
 }
+${
+  product.name === "Patterns of Opportunity: Seeing What Others Overlook"
+    ? `
+COMPETITOR RULE — EXPLICIT EXCEPTION FOR THIS PRODUCT:
+
+This is a book. The general competitor-avoidance rule does NOT apply here
+— target EVERYONE, including other authors, writers, and publishers.
+Authors are genuinely among the most motivated readers of a book like
+this, not competitors to avoid. There is no audience restriction for
+this product beyond ordinary qualification (would they plausibly want to
+read it).`
+    : ""
+}
+${
+  product.name === "Future Me"
+    ? `
+COMPETITOR RULE — SPECIFIC, NARROWER EXCEPTION FOR THIS PRODUCT:
+
+This is a coaching app usable by anyone — individuals doing their own
+self-development, life coaches, AND life coaches' own clients are all
+genuine prospects. Do NOT apply a broad "coaching industry" exclusion —
+coaches themselves are a core intended audience, not competitors.
+
+The ONLY real competitors to exclude here are companies or individuals
+who build or sell THEIR OWN coaching app/software/platform — i.e. a
+product-level competitor, not anyone who happens to work in coaching.
+A life coach who coaches clients directly is a prospect. A company
+selling a rival coaching app or platform is a competitor. Judge based on
+whether they sell a coaching TOOL/PLATFORM versus whether they PRACTICE
+coaching or would personally use one.`
+    : ""
+}
+${
+  product.name !== "Patterns of Opportunity: Seeing What Others Overlook"
+    ? `
+COMPETITOR RULE — CONCRETE EXAMPLES OF PAST MISTAKES, TO MAKE THIS UNAMBIGUOUS:
+
+This has gone wrong in ways specific enough to name directly, so there
+is no ambiguity about what to avoid:
+- For an AI voiceover/voice-generation product: another company that
+  itself builds or sells AI voice-generation or text-to-speech tools is
+  a competitor, not a prospect — even if their own site is full of
+  "AI voice" language that makes them look like a natural fit. They are
+  not a customer; they are chasing the same customer this product wants.
+- For an email marketing/drip-campaign tool: another company that itself
+  offers email marketing, drip campaigns, or marketing automation
+  software is a competitor, not a prospect — regardless of how well
+  their business appears to fit search terms related to email or
+  marketing.
+Before including any prospect, explicitly check: does this
+company/person SELL something that does roughly the same job as this
+product, to roughly the same buyer? If yes, exclude them — no matter how
+promising they look otherwise, no matter how well they rank in search
+results for related terms.`
+    : ""
+}
 
 IMPORTANT:
 

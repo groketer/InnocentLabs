@@ -88,12 +88,49 @@ async function connect(): Promise<ImapFlow> {
  * If IMAP isn't configured, returns an empty list rather than throwing —
  * this feature is entirely optional infrastructure on top of everything
  * else, not something that should ever break the rest of the app.
+ *
+ * MILESTONE 4A — retries the whole operation up to twice more on a
+ * connection-related failure. The errors seen in production
+ * ("Connection not available", "pendingRequest") are the mail server's
+ * connection dropping mid-operation — a transient external reliability
+ * issue, not a bug in this code, and the same class of problem the
+ * database retry logic already handles well. A dropped connection
+ * during one attempt very often succeeds cleanly on the next.
  */
 export async function fetchUnseenMessages(): Promise<FetchedInboundMessage[]> {
   if (!isImapConfigured()) {
     return [];
   }
 
+  const MAX_ATTEMPTS = 3;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      return await fetchUnseenMessagesOnce();
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const isConnectionIssue =
+        message.toLowerCase().includes("connection") ||
+        message.toLowerCase().includes("timeout") ||
+        message.toLowerCase().includes("socket");
+
+      if (!isConnectionIssue || attempt === MAX_ATTEMPTS) {
+        throw error;
+      }
+
+      console.warn(
+        `[imapClient] Inbox check attempt ${attempt}/${MAX_ATTEMPTS} failed with a connection issue, retrying:`,
+        message
+      );
+    }
+  }
+
+  throw lastError;
+}
+
+async function fetchUnseenMessagesOnce(): Promise<FetchedInboundMessage[]> {
   const messages: FetchedInboundMessage[] = [];
   const client = await connect();
 

@@ -1476,3 +1476,106 @@ export async function listAllProspectsForExport(
     mapProspectRow
   );
 }
+
+/**
+ * MILESTONE 4E — deletion, from either the chat agent (explicit
+ * instruction) or the auto-cleanup flow when disqualifying a prospect
+ * with no fit for any other product.
+ */
+export async function deleteProspect(userId: string, id: string): Promise<void> {
+  const normalizedUserId = userId.trim();
+  const normalizedId = id.trim();
+  if (!normalizedUserId || !normalizedId) {
+    throw new Error("A user and prospect id are required.");
+  }
+
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `DELETE FROM prospects WHERE id = ? AND user_id = ?`,
+    args: [normalizedId, normalizedUserId],
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Prospect not found.");
+  }
+}
+
+/**
+ * MILESTONE 4E — moves a prospect to a different product when they
+ * don't fit the one they were originally found for, but genuinely do
+ * fit another. Resets qualification to needs_review since they haven't
+ * actually been evaluated against the NEW product yet — carrying over
+ * "qualified" or "unqualified" from the old product would be
+ * misleading. fit_reason is cleared for the same reason.
+ */
+export async function reassignProspectToProduct(
+  userId: string,
+  id: string,
+  newProductId: string
+): Promise<Prospect> {
+  const normalizedUserId = userId.trim();
+  const normalizedId = id.trim();
+  if (!normalizedUserId || !normalizedId || !newProductId.trim()) {
+    throw new Error("A user, prospect id, and new product id are required.");
+  }
+
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `
+      UPDATE prospects
+      SET product_id = @product_id, qualification_status = 'needs_review', fit_reason = NULL, updated_at = @updated_at
+      WHERE id = @id AND user_id = @user_id
+    `,
+    args: {
+      product_id: newProductId,
+      updated_at: new Date().toISOString(),
+      id: normalizedId,
+      user_id: normalizedUserId,
+    },
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Prospect not found.");
+  }
+
+  const check = await db.execute({
+    sql: `SELECT * FROM prospects WHERE id = ? AND user_id = ?`,
+    args: [normalizedId, normalizedUserId],
+  });
+  const row = check.rows[0] as unknown as Record<string, unknown> | undefined;
+  if (!row) {
+    throw new Error("Prospect was updated but could not be retrieved afterward.");
+  }
+  return mapProspectRow(row);
+}
+
+/**
+ * MILESTONE 4E — finds prospects by loose name/organization/email
+ * matching, for the chat agent's delete_prospects tool. Not exact-match
+ * only, since Innocent will refer to prospects conversationally
+ * ("the 7 Groketer Mail Drip prospects that don't fit") rather than by
+ * database ID.
+ */
+export async function findProspectsByLooseMatch(
+  userId: string,
+  query: string
+): Promise<Prospect[]> {
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId || !query.trim()) return [];
+
+  const db = await getDb();
+  const pattern = `%${query.trim()}%`;
+
+  const result = await db.execute({
+    sql: `
+      SELECT * FROM prospects
+      WHERE user_id = ?
+        AND (name ILIKE ? OR organization ILIKE ? OR email ILIKE ?)
+      ORDER BY created_at DESC
+      LIMIT 100
+    `,
+    args: [normalizedUserId, pattern, pattern, pattern],
+  });
+
+  return (result.rows as unknown as Array<Record<string, unknown>>).map(mapProspectRow);
+}

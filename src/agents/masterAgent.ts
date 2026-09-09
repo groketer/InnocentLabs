@@ -32,6 +32,7 @@ import type { AgentRunContext } from "./context";
 import { getProspectsTool } from "./tools/getProspectsTool";
 import { getFollowUpsStatusTool } from "./tools/getFollowUpsStatusTool";
 import { saveMemoryTool } from "./tools/saveMemoryTool";
+import { deleteProspectsTool } from "./tools/deleteProspectsTool";
 import { getSettingsTool } from "./tools/getSettingsTool";
 import { listProductsTool } from "./tools/listProductsTool";
 import { getActivitySummaryTool } from "./tools/getActivitySummaryTool";
@@ -564,6 +565,7 @@ tools: [
   getProductIntelligenceTool,
   getResearchResultTool,
   saveMemoryTool,
+  deleteProspectsTool,
   getProspectsTool,
   getFollowUpsStatusTool,
   getSettingsTool,

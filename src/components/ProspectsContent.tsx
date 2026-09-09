@@ -56,6 +56,7 @@ export function ProspectsContent() {
     initialIndex >= 0 ? initialIndex : 0
   );
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{
@@ -124,6 +125,20 @@ export function ProspectsContent() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Could not update prospect.");
+
+      // MILESTONE 4E — marking "unqualified" now triggers a check
+      // against every other approved product: deleted if they fit
+      // nothing, reassigned if they genuinely fit something else.
+      if (data.cleanup?.action === "deleted") {
+        setProspects((prev) => (prev ? prev.filter((p) => p.id !== id) : prev));
+        setNotice(`${data.prospect?.name ?? "Prospect"} didn't fit any other product — removed.`);
+        return;
+      }
+      if (data.cleanup?.action === "reassigned") {
+        setProspects((prev) => (prev ? prev.filter((p) => p.id !== id) : prev));
+        setNotice(`${data.prospect?.name ?? "Prospect"} was moved to ${data.cleanup.reassignedTo} instead — a better fit.`);
+        return;
+      }
 
       setProspects((prev) =>
         prev
@@ -205,6 +220,12 @@ export function ProspectsContent() {
       {error && (
         <div className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
+        </div>
+      )}
+
+      {notice && (
+        <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          {notice}
         </div>
       )}
 

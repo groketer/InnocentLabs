@@ -6,6 +6,7 @@ import { LOCAL_USER_ID } from "@/lib/localUser";
 import type { AgentRunContext } from "@/agents/context";
 import { listChatMessages, saveChatMessage } from "@/lib/models/chat";
 import { recordApiUsage } from "@/lib/models/apiUsage";
+import { listRecentSummaries, listMemoryEntries } from "@/lib/models/memory";
 
 // This route must run on Node.js (not the Edge runtime) because it reads
 // knowledge files from the filesystem, talks to the OpenAI API, and (via
@@ -74,8 +75,37 @@ export async function POST(req: NextRequest) {
     // 3. Load the (currently file-based) knowledge layer.
     const knowledgeBase = await loadKnowledgeBase();
 
-    // 4. Build the agent for this request, grounded in the knowledge base.
-    const agent = createInnocentIntelligenceAgent(knowledgeBase);
+    // 3b. Load accumulated memory — recent conversation summaries and
+    // durable facts/preferences. Both are capped on the read side (see
+    // src/lib/models/memory.ts) so this stays fast and affordable as it
+    // accumulates over time, rather than growing context unboundedly.
+    const [recentSummaries, memoryEntries] = await Promise.all([
+      listRecentSummaries(LOCAL_USER_ID, 5),
+      listMemoryEntries(LOCAL_USER_ID, 30),
+    ]);
+
+    const memoryContextParts: string[] = [];
+    if (recentSummaries.length > 0) {
+      memoryContextParts.push(
+        "RECENT CONVERSATION SUMMARIES (most recent last):\n" +
+          recentSummaries
+            .map((s) => `- [${s.created_at}] ${s.summary}`)
+            .join("\n")
+      );
+    }
+    if (memoryEntries.length > 0) {
+      memoryContextParts.push(
+        "DURABLE FACTS, PREFERENCES, AND OUTCOMES LEARNED SO FAR:\n" +
+          memoryEntries
+            .map((m) => `- (${m.category}) ${m.content}`)
+            .join("\n")
+      );
+    }
+    const memoryContext = memoryContextParts.join("\n\n");
+
+    // 4. Build the agent for this request, grounded in the knowledge base
+    // and accumulated memory.
+    const agent = createInnocentIntelligenceAgent(knowledgeBase, memoryContext);
 
     // 5. Reconstruct conversation input: prior turns + the new user message.
     const priorTurns: AgentInputItem[] = history

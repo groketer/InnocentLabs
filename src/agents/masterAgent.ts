@@ -31,6 +31,7 @@ import { getResearchResultTool } from "./tools/getResearchResultTool";
 import type { AgentRunContext } from "./context";
 import { getProspectsTool } from "./tools/getProspectsTool";
 import { getFollowUpsStatusTool } from "./tools/getFollowUpsStatusTool";
+import { saveMemoryTool } from "./tools/saveMemoryTool";
 import { getSettingsTool } from "./tools/getSettingsTool";
 import { listProductsTool } from "./tools/listProductsTool";
 import { getActivitySummaryTool } from "./tools/getActivitySummaryTool";
@@ -57,7 +58,8 @@ const MODEL = "gpt-4.1-mini";
 * * webSearchTool: performs live public-web research.
     */
     export function createInnocentIntelligenceAgent(
-    knowledgeBase: string
+    knowledgeBase: string,
+    memoryContext: string = ""
     ): Agent<AgentRunContext> {
     console.log("[masterAgent] Web search tool enabled");
 
@@ -537,12 +539,31 @@ Remember:
 
 <knowledge_base>
 ${knowledgeBase}
-</knowledge_base>`,
+</knowledge_base>
+
+<accumulated_memory>
+This is what you have learned and remembered from past conversations —
+durable facts, standing preferences, and recent conversation summaries.
+Treat this as genuinely informing how you operate, not just background
+trivia to recite if asked. If Innocent has stated a standing preference
+here, follow it without being reminded. If recent conversation summaries
+show ongoing work, pick up from there rather than asking what's going on
+from scratch.
+
+${memoryContext || "No accumulated memory yet — this is early in building this up."}
+</accumulated_memory>
+
+Use the save_memory tool proactively — without waiting to be asked —
+whenever something durable comes up worth remembering beyond this one
+conversation: a preference Innocent states, recurring business context,
+or a real outcome worth remembering. Do not save routine conversational
+content or one-off task details.`,
 
 tools: [
   createTaskTool,
   getProductIntelligenceTool,
   getResearchResultTool,
+  saveMemoryTool,
   getProspectsTool,
   getFollowUpsStatusTool,
   getSettingsTool,

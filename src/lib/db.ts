@@ -420,6 +420,55 @@ async function runMigrations(db: Db): Promise<void> {
       },
 
       /*
+       * MILESTONE 4D — cross-conversation memory, layer 1: summaries.
+       *
+       * A short summary generated when a conversation is retired (the
+       * user starts a fresh one) — what was discussed and decided, not
+       * the full transcript. New conversations pull in the last several
+       * of these for continuity, without needing to load entire past
+       * transcripts into context (which would grow unboundedly over
+       * time and become expensive/slow).
+       */
+      {
+        sql: `CREATE TABLE IF NOT EXISTS conversation_summaries (
+          id              TEXT PRIMARY KEY,
+          conversation_id TEXT NOT NULL,
+          user_id         TEXT NOT NULL,
+          summary         TEXT NOT NULL,
+          message_count   INTEGER NOT NULL DEFAULT 0,
+          created_at      TEXT NOT NULL DEFAULT (${NOW_ISO_SQL})
+        )`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_conversation_summaries_user
+          ON conversation_summaries(user_id, created_at)`,
+      },
+
+      /*
+       * MILESTONE 4D — cross-conversation memory, layer 2: durable facts.
+       *
+       * Not "what was said" but "what matters going forward" — standing
+       * preferences, recurring business context, and outcomes worth
+       * remembering. The agent both reads this at the start of every
+       * conversation and writes to it (via a tool) when something
+       * durable comes up, rather than only recalling on request.
+       */
+      {
+        sql: `CREATE TABLE IF NOT EXISTS agent_memory (
+          id          TEXT PRIMARY KEY,
+          user_id     TEXT NOT NULL,
+          category    TEXT NOT NULL,
+          content     TEXT NOT NULL,
+          created_at  TEXT NOT NULL DEFAULT (${NOW_ISO_SQL}),
+          updated_at  TEXT NOT NULL DEFAULT (${NOW_ISO_SQL})
+        )`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_agent_memory_user
+          ON agent_memory(user_id, updated_at)`,
+      },
+
+      /*
        * Milestone 3D — Prospect intelligence. See the original schema
        * comment history in git for the full rationale; unchanged here
        * beyond the Postgres syntax translation.

@@ -23,6 +23,7 @@ export function ChatWindow() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isStartingNewChat, setIsStartingNewChat] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // MILESTONE 4B — the actual root cause of "the agent keeps forgetting":
@@ -64,6 +65,32 @@ export function ChatWindow() {
       })
       .catch(() => undefined);
   }, []);
+
+  async function handleNewChat() {
+    setIsStartingNewChat(true);
+    setError(null);
+    try {
+      // Summarize the outgoing conversation before it effectively goes
+      // quiet — this is what future conversations pull in for
+      // continuity. Never block starting the new chat on this succeeding.
+      await fetch("/api/chat/new", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversationId: conversationIdRef.current }),
+      }).catch(() => undefined);
+
+      const STORAGE_KEY = "innocent-intelligence-conversation-id";
+      const fresh =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `conv-${Date.now()}`;
+      window.localStorage.setItem(STORAGE_KEY, fresh);
+      conversationIdRef.current = fresh;
+      setMessages([WELCOME_MESSAGE]);
+    } finally {
+      setIsStartingNewChat(false);
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -120,11 +147,20 @@ export function ChatWindow() {
 
   return (
     <div className="flex h-full flex-1 flex-col">
-      <div className="border-b border-ink-700 px-6 py-4">
-        <h1 className="text-lg font-semibold text-white">Intelligence</h1>
-        <p className="text-xs text-white/40">
-          Conversational session — not saved between browser reloads yet.
-        </p>
+      <div className="flex items-center justify-between border-b border-ink-700 px-6 py-4">
+        <div>
+          <h1 className="text-lg font-semibold text-white">Intelligence</h1>
+          <p className="text-xs text-white/40">
+            Persists across visits — pick up where you left off, or start fresh below.
+          </p>
+        </div>
+        <button
+          onClick={handleNewChat}
+          disabled={isStartingNewChat}
+          className="rounded-md border border-ink-600 px-3 py-1.5 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-50"
+        >
+          {isStartingNewChat ? "Starting…" : "New chat"}
+        </button>
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6">

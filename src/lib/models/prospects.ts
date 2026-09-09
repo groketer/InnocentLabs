@@ -1481,6 +1481,15 @@ export async function listAllProspectsForExport(
  * MILESTONE 4E — deletion, from either the chat agent (explicit
  * instruction) or the auto-cleanup flow when disqualifying a prospect
  * with no fit for any other product.
+ *
+ * MILESTONE 4F — a real bug this fixes: email_sends and inbound_emails
+ * both reference prospects via a foreign key with no ON DELETE CASCADE,
+ * so any prospect with sent emails or inbound replies on record could
+ * not actually be deleted — the database correctly refused with a
+ * constraint violation, surfaced to Innocent as a confusing error for
+ * a prospect he'd already been emailing. Deleting the related records
+ * first, explicitly, is what "delete this prospect" should actually
+ * mean — not "delete unless they have any history."
  */
 export async function deleteProspect(userId: string, id: string): Promise<void> {
   const normalizedUserId = userId.trim();
@@ -1490,6 +1499,16 @@ export async function deleteProspect(userId: string, id: string): Promise<void> 
   }
 
   const db = await getDb();
+
+  await db.execute({
+    sql: `DELETE FROM email_sends WHERE prospect_id = ? AND user_id = ?`,
+    args: [normalizedId, normalizedUserId],
+  });
+  await db.execute({
+    sql: `DELETE FROM inbound_emails WHERE prospect_id = ? AND user_id = ?`,
+    args: [normalizedId, normalizedUserId],
+  });
+
   const result = await db.execute({
     sql: `DELETE FROM prospects WHERE id = ? AND user_id = ?`,
     args: [normalizedId, normalizedUserId],

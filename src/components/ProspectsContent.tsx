@@ -139,6 +139,13 @@ export function ProspectsContent() {
         setNotice(`${data.prospect?.name ?? "Prospect"} was moved to ${data.cleanup.reassignedTo} instead — a better fit.`);
         return;
       }
+      if (data.cleanup?.action === "kept") {
+        // MILESTONE 4F — this is the most common, expected outcome (most
+        // disqualified prospects don't fit anything else either), but
+        // silent success looked identical to the feature not running at
+        // all. Explicit confirmation either way.
+        setNotice(`${data.prospect?.name ?? "Prospect"} checked against other products — no fit found, kept as not a fit.`);
+      }
 
       setProspects((prev) =>
         prev

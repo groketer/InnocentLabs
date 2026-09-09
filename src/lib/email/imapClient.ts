@@ -59,9 +59,13 @@ async function connect(): Promise<ImapFlow> {
     // These are deliberately short: a working mail server responds in
     // a few seconds, not tens of seconds, so failing fast here is a
     // real fix, not just a tighter number.
-    connectionTimeout: 15_000,
-    greetingTimeout: 10_000,
-    socketTimeout: 30_000,
+    // MILESTONE 4C — reduced further from the original fix. A working
+    // mail server responds in a few seconds; these are now tuned so
+    // even a single slow attempt can't dominate the overall 35-second
+    // budget the retry loop enforces above.
+    connectionTimeout: 8_000,
+    greetingTimeout: 6_000,
+    socketTimeout: 15_000,
   });
 
   // MILESTONE 3Z-7 — the actual root cause, found directly from a real
@@ -102,10 +106,23 @@ export async function fetchUnseenMessages(): Promise<FetchedInboundMessage[]> {
     return [];
   }
 
-  const MAX_ATTEMPTS = 3;
+  // MILESTONE 4C — a real mistake in my own previous fix, found directly
+  // from production logs: retrying up to 3 times without capping the
+  // TOTAL time budget meant the whole operation could exceed Vercel's
+  // 60-second hard limit even though each individual retry seemed
+  // reasonable on its own — 3 attempts at up to 15s connection + 30s
+  // socket timeout each could add up to well over 60s combined. A fixed
+  // attempt count isn't the right safeguard here; a fixed WALL-CLOCK
+  // deadline for the whole operation is. This also leaves real time for
+  // the rest of tick()'s work (task processing) to still complete
+  // afterward, rather than consuming the entire function budget.
+  const OVERALL_DEADLINE_MS = 28_000;
+  const startedAt = Date.now();
   let lastError: unknown;
+  let attempt = 0;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  while (Date.now() - startedAt < OVERALL_DEADLINE_MS) {
+    attempt++;
     try {
       return await fetchUnseenMessagesOnce();
     } catch (error) {
@@ -116,12 +133,18 @@ export async function fetchUnseenMessages(): Promise<FetchedInboundMessage[]> {
         message.toLowerCase().includes("timeout") ||
         message.toLowerCase().includes("socket");
 
-      if (!isConnectionIssue || attempt === MAX_ATTEMPTS) {
+      const elapsed = Date.now() - startedAt;
+      const remaining = OVERALL_DEADLINE_MS - elapsed;
+
+      if (!isConnectionIssue || remaining < 3000) {
+        // Either a non-connection error (retrying won't help), or too
+        // little of the overall budget left to meaningfully try again.
         throw error;
       }
 
       console.warn(
-        `[imapClient] Inbox check attempt ${attempt}/${MAX_ATTEMPTS} failed with a connection issue, retrying:`,
+        `[imapClient] Inbox check attempt ${attempt} failed with a connection issue ` +
+          `(${elapsed}ms elapsed, ${remaining}ms left in budget), retrying:`,
         message
       );
     }

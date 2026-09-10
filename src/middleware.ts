@@ -31,12 +31,11 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    // MILESTONE 3Z-10 — added api/tick-status and api/debug to the
-    // exclusion list. Both are read-only (or self-contained) diagnostic
-    // endpoints exposing no sensitive data — just timestamps and status
-    // text — and testing them meaningfully requires visiting them
-    // directly, independent of whatever browser session state happens
-    // to exist at the time. Requiring login defeated that purpose.
-    "/((?!api/cron|api/auth|api/tasks/tick|api/tick-status|api/debug|unsubscribe|login|_next/static|_next/image|favicon.ico).*)",
+    // MILESTONE 4G — added api/webhooks. Resend (not a logged-in user)
+    // calls this directly; it authenticates via Svix signature
+    // verification inside the route itself, the same pattern as
+    // api/tasks/tick authenticating via QStash's signature instead of a
+    // session cookie.
+    "/((?!api/cron|api/auth|api/tasks/tick|api/tick-status|api/debug|api/webhooks|unsubscribe|login|_next/static|_next/image|favicon.ico).*)",
   ],
 };

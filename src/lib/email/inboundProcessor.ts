@@ -133,6 +133,28 @@ export async function processInboundEmail(): Promise<{ processed: number; batchW
   return { processed: messages.length, batchWasFull: messages.length >= INBOX_CHECK_BATCH_SIZE };
 }
 
+/**
+ * MILESTONE 4G — the webhook-based inbound path (Resend).
+ *
+ * Same processing logic as the IMAP path above — classification, bounce
+ * handling, reply composition, escalation — applied to a single message
+ * that arrived via webhook instead of being fetched by polling. This is
+ * what makes the webhook route thin: it only needs to shape a Resend
+ * payload into a FetchedInboundMessage and call this.
+ */
+export async function processInboundWebhookMessage(
+  message: Awaited<ReturnType<typeof fetchUnseenMessages>>[number]
+): Promise<void> {
+  const settings = await getSettings();
+
+  if (!settings.autonomous_replies) {
+    return;
+  }
+
+  const knownEmails = await listAllProspectEmails(LOCAL_USER_ID);
+  await processOneMessage(message, knownEmails, settings);
+}
+
 async function processOneMessage(
   message: Awaited<ReturnType<typeof fetchUnseenMessages>>[number],
   knownEmails: Set<string>,

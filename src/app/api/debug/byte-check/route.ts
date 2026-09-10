@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { noCacheJson } from "@/lib/noCacheJson";
 import { getDb } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
   const id = searchParams.get("id");
 
   if (!id) {
-    return NextResponse.json({ error: "?id=... is required." }, { status: 400 });
+    return noCacheJson({ error: "?id=... is required." }, { status: 400 });
   }
 
   const db = await getDb();
@@ -43,8 +44,8 @@ export async function GET(req: NextRequest) {
   });
 
   if (result.rows.length === 0) {
-    return NextResponse.json({ error: "Prospect not found." }, { status: 404 });
+    return noCacheJson({ error: "Prospect not found." }, { status: 404 });
   }
 
-  return NextResponse.json({ row: result.rows[0] });
+  return noCacheJson({ row: result.rows[0] });
 }

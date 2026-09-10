@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { noCacheJson } from "@/lib/noCacheJson";
 import { listActiveSequences } from "@/lib/models/prospects";
 import { listProducts } from "@/lib/models/products";
 import { LOCAL_USER_ID } from "@/lib/localUser";
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
     ? products.find((p) => p.id === foundInSequences.product_id)
     : null;
 
-  return NextResponse.json({
+  return noCacheJson({
     totalSequencesReturned: sequences.length,
     foundInSequences: foundInSequences ?? null,
     productLookupResult: foundInSequences?.product_id

@@ -8,6 +8,7 @@ import type {
 } from "@/lib/models/prospects";
 
 import { createProspect } from "@/lib/models/prospects";
+import { noCacheJson } from "@/lib/noCacheJson";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,13 +47,10 @@ export async function GET(req: NextRequest) {
         : null,
     }));
 
-    return NextResponse.json({ prospects: withProductName });
+    return noCacheJson({ prospects: withProductName });
   } catch (error) {
     console.error("[api/prospects] GET failed:", error);
-    return NextResponse.json(
-      { error: "Could not load prospects." },
-      { status: 500 }
-    );
+    return noCacheJson({ error: "Could not load prospects." }, { status: 500 });
   }
 }
 

@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { noCacheJson } from "@/lib/noCacheJson";
 import { listActivity } from "@/lib/models/activity";
 import { LOCAL_USER_ID } from "@/lib/localUser";
 import type { ActivityEventType } from "@/lib/types";
@@ -23,10 +24,10 @@ export async function GET(req: NextRequest) {
       offset: offsetParam ? Number(offsetParam) : undefined,
     });
 
-    return NextResponse.json({ activity });
+    return noCacheJson({ activity });
   } catch (error) {
     console.error("[api/activity] GET failed:", error);
-    return NextResponse.json(
+    return noCacheJson(
       { error: "Could not load activity." },
       { status: 500 }
     );

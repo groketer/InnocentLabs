@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { noCacheJson } from "@/lib/noCacheJson";
 import { getDb } from "@/lib/db";
 import { listProducts } from "@/lib/models/products";
 import { LOCAL_USER_ID } from "@/lib/localUser";
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
     const q = (searchParams.get("q") ?? "").trim();
 
     if (q.length < 2) {
-      return NextResponse.json({ prospects: [], products: [], tasks: [] });
+      return noCacheJson({ prospects: [], products: [], tasks: [] });
     }
 
     const db = await getDb();
@@ -66,13 +67,13 @@ export async function GET(req: NextRequest) {
       .slice(0, 10)
       .map((p) => ({ id: p.id, name: p.name, category: p.category }));
 
-    return NextResponse.json({
+    return noCacheJson({
       prospects: prospectsResult.rows,
       tasks: tasksResult.rows,
       products,
     });
   } catch (error) {
     console.error("[api/search] GET failed:", error);
-    return NextResponse.json({ error: "Search failed." }, { status: 500 });
+    return noCacheJson({ error: "Search failed." }, { status: 500 });
   }
 }

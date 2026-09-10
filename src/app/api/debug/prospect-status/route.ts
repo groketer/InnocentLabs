@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { noCacheJson } from "@/lib/noCacheJson";
 import { getDb } from "@/lib/db";
 import { LOCAL_USER_ID } from "@/lib/localUser";
 
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
   const email = searchParams.get("email");
 
   if (!email) {
-    return NextResponse.json({ error: "?email=... is required." }, { status: 400 });
+    return noCacheJson({ error: "?email=... is required." }, { status: 400 });
   }
 
   const db = await getDb();
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
   const rows = result.rows as unknown as Array<Record<string, unknown>>;
 
   if (rows.length === 0) {
-    return NextResponse.json({ error: "No prospect found with that email." }, { status: 404 });
+    return noCacheJson({ error: "No prospect found with that email." }, { status: 404 });
   }
 
   const inboundResult = await db.execute({
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
     args: [LOCAL_USER_ID, rows[0].id as string],
   });
 
-  return NextResponse.json({
+  return noCacheJson({
     prospect: rows[0],
     recentInboundEmails: inboundResult.rows,
   });

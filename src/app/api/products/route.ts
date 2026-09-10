@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listProducts, getLatestWebsiteAuditResult, createManualProduct } from "@/lib/models/products";
+import { noCacheJson } from "@/lib/noCacheJson";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,13 +23,10 @@ export async function GET() {
       })
     );
 
-    return NextResponse.json({ products: withSeo });
+    return noCacheJson({ products: withSeo });
   } catch (error) {
     console.error("[api/products] GET failed:", error);
-    return NextResponse.json(
-      { error: "Could not load products." },
-      { status: 500 }
-    );
+    return noCacheJson({ error: "Could not load products." }, { status: 500 });
   }
 }
 

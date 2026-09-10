@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server";
 import { listActiveSequences } from "@/lib/models/prospects";
 import { listProducts } from "@/lib/models/products";
 import { LOCAL_USER_ID } from "@/lib/localUser";
+import { noCacheJson } from "@/lib/noCacheJson";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,12 +22,9 @@ export async function GET() {
         : null,
     }));
 
-    return NextResponse.json({ sequences: withProductName });
+    return noCacheJson({ sequences: withProductName });
   } catch (error) {
     console.error("[api/followups] GET failed:", error);
-    return NextResponse.json(
-      { error: "Could not load follow-ups." },
-      { status: 500 }
-    );
+    return noCacheJson({ error: "Could not load follow-ups." }, { status: 500 });
   }
 }

@@ -58,6 +58,18 @@ export function ProspectsContent() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
+  const [addForm, setAddForm] = useState({
+    name: "",
+    email: "",
+    organization: "",
+    role: "",
+    product_id: "",
+    notes: "",
+  });
+  const [isAdding, setIsAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{
     imported: number;
@@ -84,6 +96,37 @@ export function ProspectsContent() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterIndex]);
+
+  useEffect(() => {
+    fetch("/api/products")
+      .then((res) => res.json())
+      .then((data) => setProducts(data.products ?? []))
+      .catch(() => setProducts([]));
+  }, []);
+
+  async function handleAddProspect(e: React.FormEvent) {
+    e.preventDefault();
+    setIsAdding(true);
+    setAddError(null);
+    try {
+      const res = await fetch("/api/prospects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(addForm),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not add prospect.");
+
+      setShowAddModal(false);
+      setAddForm({ name: "", email: "", organization: "", role: "", product_id: "", notes: "" });
+      setNotice(`${data.prospect?.name ?? "Prospect"} added.`);
+      load();
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : "Could not add prospect.");
+    } finally {
+      setIsAdding(false);
+    }
+  }
 
   async function handleImportFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -175,6 +218,12 @@ export function ProspectsContent() {
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/20"
+          >
+            Add prospect
+          </button>
           <a
             href="/api/prospects/export"
             className="rounded-md border border-ink-600 px-3 py-2 text-xs text-white/60 transition-colors hover:text-white"
@@ -343,6 +392,102 @@ export function ProspectsContent() {
           ))
         )}
       </div>
+
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-lg border border-ink-600 bg-ink-900 p-6">
+            <h2 className="text-base font-semibold text-white">Add prospect</h2>
+            <p className="mt-1 text-xs text-white/40">
+              For adding someone you already know about directly — testing, a referral, a personal contact.
+            </p>
+
+            <form onSubmit={handleAddProspect} className="mt-4 space-y-3">
+              <div>
+                <label className="text-xs text-white/50">Name *</label>
+                <input
+                  required
+                  value={addForm.name}
+                  onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-white/50">Email *</label>
+                <input
+                  required
+                  type="email"
+                  value={addForm.email}
+                  onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-white/50">Organization</label>
+                <input
+                  value={addForm.organization}
+                  onChange={(e) => setAddForm({ ...addForm, organization: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-white/50">Role</label>
+                <input
+                  value={addForm.role}
+                  onChange={(e) => setAddForm({ ...addForm, role: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-white"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-white/50">Product</label>
+                <select
+                  value={addForm.product_id}
+                  onChange={(e) => setAddForm({ ...addForm, product_id: e.target.value })}
+                  className="mt-1 w-full rounded-md border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-white"
+                >
+                  <option value="">None / undecided</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-white/50">Notes</label>
+                <textarea
+                  value={addForm.notes}
+                  onChange={(e) => setAddForm({ ...addForm, notes: e.target.value })}
+                  rows={2}
+                  className="mt-1 w-full rounded-md border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-white"
+                />
+              </div>
+
+              {addError && (
+                <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                  {addError}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="rounded-md border border-ink-600 px-3 py-2 text-xs text-white/60 hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAdding}
+                  className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+                >
+                  {isAdding ? "Adding…" : "Add prospect"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

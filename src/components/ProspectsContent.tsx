@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { formatTimestamp } from "@/lib/format";
@@ -59,6 +59,7 @@ export function ProspectsContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [sendingNowId, setSendingNowId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
   const [addForm, setAddForm] = useState({
@@ -224,6 +225,17 @@ export function ProspectsContent() {
     }
   }
 
+  const filteredProspects = useMemo(() => {
+    if (!prospects) return prospects;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return prospects;
+    return prospects.filter((p) =>
+      [p.name, p.organization, p.email, p.role]
+        .filter(Boolean)
+        .some((field) => field!.toLowerCase().includes(q))
+    );
+  }, [prospects, searchQuery]);
+
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -275,7 +287,7 @@ export function ProspectsContent() {
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap items-center gap-2">
         {STATUS_FILTERS.map((f, i) => (
           <button
             key={f.label}
@@ -289,6 +301,13 @@ export function ProspectsContent() {
             {f.label}
           </button>
         ))}
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search name, organization, email…"
+          className="ml-auto w-64 rounded-full border border-ink-600 bg-ink-800 px-3 py-1 text-xs text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none"
+        />
       </div>
 
       {error && (
@@ -304,9 +323,11 @@ export function ProspectsContent() {
       )}
 
       <div className="mt-6 space-y-3">
-        {!prospects ? (
+        {!filteredProspects ? (
           <p className="text-sm text-white/40">Loading…</p>
-        ) : prospects.length === 0 ? (
+        ) : filteredProspects.length === 0 && prospects && prospects.length > 0 ? (
+          <p className="text-sm text-white/40">No prospects match &quot;{searchQuery}&quot;.</p>
+        ) : filteredProspects.length === 0 ? (
           <p className="text-sm text-white/40">
             No prospects yet. Prospects show up here once a prospecting task
             finds and evidences them —{" "}
@@ -316,7 +337,7 @@ export function ProspectsContent() {
             .
           </p>
         ) : (
-          prospects.map((p) => (
+          filteredProspects.map((p) => (
             <div
               key={p.id}
               className="rounded-md border border-ink-700 bg-ink-900 px-4 py-3"

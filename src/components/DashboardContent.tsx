@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { AgentTask } from "@/lib/types";
 import { STATUS_META, formatProgress, formatTime } from "@/lib/format";
+import { GlobalSearch } from "./GlobalSearch";
 
 interface Stats {
   active_tasks: number;
@@ -116,6 +117,10 @@ export function DashboardContent() {
       <p className="mt-1 text-xs text-white/40">
         Agent activity and current tasks across Innocent Labs.
       </p>
+
+      <div className="mt-4">
+        <GlobalSearch />
+      </div>
 
       {error && (
         <div className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">

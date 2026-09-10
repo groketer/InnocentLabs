@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatTimestamp } from "@/lib/format";
 import type { Product } from "@/lib/types";
 import type { ProductInsight } from "@/lib/models/insights";
@@ -30,6 +30,7 @@ export function ProductsContent() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [newProduct, setNewProduct] = useState({ name: "", url: "", category: "", description: "" });
   const [addingProduct, setAddingProduct] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   async function load() {
     try {
@@ -260,6 +261,17 @@ export function ProductsContent() {
     }
   }
 
+  const filteredProducts = useMemo(() => {
+    if (!products) return products;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return products;
+    return products.filter((p) =>
+      [p.name, p.category, p.description]
+        .filter(Boolean)
+        .some((field) => field!.toLowerCase().includes(q))
+    );
+  }, [products, searchQuery]);
+
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -341,11 +353,21 @@ export function ProductsContent() {
         </div>
       )}
 
+      <input
+        type="text"
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder="Search name, category, description…"
+        className="mt-4 w-64 rounded-full border border-ink-600 bg-ink-800 px-3 py-1 text-xs text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none"
+      />
+
       <div className="mt-6 space-y-3">
-        {!products ? (
+        {!filteredProducts ? (
           <p className="text-sm text-white/40">Loading…</p>
+        ) : filteredProducts.length === 0 && products && products.length > 0 ? (
+          <p className="text-sm text-white/40">No products match &quot;{searchQuery}&quot;.</p>
         ) : (
-          products.map((p) => (
+          filteredProducts.map((p) => (
             <div
               key={p.id}
               className="rounded-md border border-ink-700 bg-ink-900 px-4 py-4"

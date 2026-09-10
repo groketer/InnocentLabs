@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatTimestamp } from "@/lib/format";
 import type { Prospect } from "@/lib/models/prospects";
 
@@ -44,6 +44,7 @@ export function FollowUpsContent() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<ConversationItem[] | null>(null);
   const [conversationError, setConversationError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   async function load() {
     try {
@@ -125,6 +126,17 @@ export function FollowUpsContent() {
     }
   }
 
+  const filteredSequences = useMemo(() => {
+    if (!sequences) return sequences;
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return sequences;
+    return sequences.filter((s) =>
+      [s.name, s.organization, s.email]
+        .filter(Boolean)
+        .some((field) => field!.toLowerCase().includes(q))
+    );
+  }, [sequences, searchQuery]);
+
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -159,6 +171,14 @@ export function FollowUpsContent() {
         qualifying someone new.
       </p>
 
+      <input
+        type="text"
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder="Search name, organization, email…"
+        className="mt-3 w-64 rounded-full border border-ink-600 bg-ink-800 px-3 py-1 text-xs text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none"
+      />
+
       {notice && (
         <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
           {notice}
@@ -171,15 +191,17 @@ export function FollowUpsContent() {
       )}
 
       <div className="mt-6 space-y-3">
-        {!sequences ? (
+        {!filteredSequences ? (
           <p className="text-sm text-white/40">Loading…</p>
-        ) : sequences.length === 0 ? (
+        ) : filteredSequences.length === 0 && sequences && sequences.length > 0 ? (
+          <p className="text-sm text-white/40">No sequences match &quot;{searchQuery}&quot;.</p>
+        ) : filteredSequences.length === 0 ? (
           <p className="text-sm text-white/40">
             No outreach sequences yet. These start automatically once a
             prospect is marked &quot;Qualified&quot; on the Prospects page.
           </p>
         ) : (
-          sequences.map((s) => (
+          filteredSequences.map((s) => (
             <div
               key={s.id}
               className="rounded-md border border-ink-700 bg-ink-900 px-4 py-3"

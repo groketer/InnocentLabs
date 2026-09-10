@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { LOCAL_USER_ID } from "@/lib/localUser";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,15 +26,20 @@ export async function GET(req: NextRequest) {
     sql: `
       SELECT
         id,
+        user_id,
+        length(user_id) AS user_id_length,
+        encode(user_id::bytea, 'hex') AS user_id_hex,
+        user_id = 'local-owner' AS user_id_matches_literal,
         sequence_status,
         sequence_status = 'in_conversation' AS matches_literal,
         length(sequence_status) AS char_length,
         encode(sequence_status::bytea, 'hex') AS hex_encoding,
-        sequence_status = ANY(ARRAY['pending_approval','active','completed','responded','unsubscribed','paused','in_conversation','needs_human_reply','bounced']) AS matches_in_clause
+        sequence_status = ANY(ARRAY['pending_approval','active','completed','responded','unsubscribed','paused','in_conversation','needs_human_reply','bounced']) AS matches_in_clause,
+        (user_id = 'local-owner' AND sequence_status IN ('pending_approval','active','completed','responded','unsubscribed','paused','in_conversation','needs_human_reply','bounced')) AS matches_full_where_clause
       FROM prospects
-      WHERE user_id = ? AND id = ?
+      WHERE id = ?
     `,
-    args: [LOCAL_USER_ID, id],
+    args: [id],
   });
 
   if (result.rows.length === 0) {

@@ -229,11 +229,23 @@ export async function sendEmail(
   const fromName = process.env.SMTP_FROM_NAME?.trim() || "Innocent Labs";
   const bcc = bccRecipients();
 
+  // MILESTONE 4K — the actual missing piece, flagged earlier but never
+  // built: without an explicit Reply-To, a prospect's reply defaults to
+  // the "from" address (the original SMTP mailbox), never reaching the
+  // webhook-monitored address at all — not even as a failed delivery,
+  // since it's a completely different, correctly-working mailbox that
+  // simply isn't being watched. REPLY_TO_ADDRESS should be set to the
+  // address on the Resend-verified subdomain (e.g.
+  // replies@replies.prfed.com). Falls back to the original from-address
+  // behavior if unset, rather than sending with no Reply-To at all.
+  const replyTo = process.env.REPLY_TO_ADDRESS?.trim() || process.env.SMTP_USER;
+
   try {
     const info = await getTransporter().sendMail({
       from: `"${fromName}" <${process.env.SMTP_USER}>`,
       to: input.to,
       ...(bcc.length > 0 ? { bcc } : {}),
+      ...(replyTo ? { replyTo } : {}),
       subject: input.subject,
       text: finalBody,
       ...(input.inReplyTo

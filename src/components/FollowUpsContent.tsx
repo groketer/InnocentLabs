@@ -41,7 +41,6 @@ export function FollowUpsContent() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [runningNow, setRunningNow] = useState(false);
-  const [checkingInbox, setCheckingInbox] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<ConversationItem[] | null>(null);
   const [conversationError, setConversationError] = useState<string | null>(null);
@@ -126,81 +125,16 @@ export function FollowUpsContent() {
     }
   }
 
-  async function checkInboxNow() {
-    setCheckingInbox(true);
-    setNotice(null);
-    setError(null);
-
-    // MILESTONE 3Y — a real usability problem this fixes: one click used
-    // to check one small batch, meaning a real backlog needed dozens of
-    // manual clicks to clear. This now keeps going on its own — including
-    // treating an individual timeout as partial progress worth continuing
-    // from, not a failure to stop at — up to a safety cap so a genuinely
-    // stuck state can't loop forever.
-    const MAX_ROUNDS = 30;
-    let totalProcessed = 0;
-    let round = 0;
-
-    try {
-      while (round < MAX_ROUNDS) {
-        round++;
-        setNotice(`Checking inbox… ${totalProcessed} processed so far (round ${round}).`);
-
-        const res = await fetch("/api/followups/check-inbox-now", { method: "POST" });
-        const rawText = await res.text();
-
-        let data: { error?: string; processed?: number; batchWasFull?: boolean } | null = null;
-        try {
-          data = JSON.parse(rawText);
-        } catch {
-          // Not JSON — the platform itself killed this specific round
-          // (most likely a function execution timeout), not the app's own
-          // code. Whatever was fetched before the kill is still marked
-          // read on the mail server, so this is real partial progress,
-          // not a failure — keep going rather than stopping here.
-          continue;
-        }
-
-        if (!res.ok) {
-          throw new Error(data?.error || "Could not check the inbox.");
-        }
-
-        totalProcessed += data?.processed ?? 0;
-
-        if (!data?.batchWasFull) {
-          // Fewer than a full batch came back (or none at all) — caught up.
-          break;
-        }
-
-        // A brief pause between rounds — if the mail server is genuinely
-        // struggling (which is a plausible cause of an individual round
-        // timing out), hammering it again immediately with no gap at all
-        // would make that worse, not better.
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-      }
-
-      setNotice(
-        totalProcessed > 0
-          ? `Inbox checked — ${totalProcessed} message${totalProcessed === 1 ? "" : "s"} processed. Refresh in a moment to see any new replies or bounces.`
-          : "Inbox checked — nothing new."
-      );
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not check the inbox.");
-    } finally {
-      setCheckingInbox(false);
-    }
-  }
-
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-white">Follow-ups</h1>
           <p className="mt-1 text-xs text-white/40">
-            Outreach sequences in progress. Replies can&apos;t be detected
-            automatically — mark someone &quot;Responded&quot; here once you see
-            their reply in your own inbox, and their sequence stops.
+            Outreach sequences in progress. Replies to replies@replies.prfed.com
+            are detected automatically and handled by the agent — &quot;Mark
+            Responded&quot; below is a manual override for edge cases (e.g. someone
+            replies directly to your inbox instead).
           </p>
         </div>
         <div className="flex shrink-0 gap-2">
@@ -210,13 +144,6 @@ export function FollowUpsContent() {
           >
             Download CSV
           </a>
-          <button
-            onClick={checkInboxNow}
-            disabled={checkingInbox}
-            className="rounded-md border border-sky-500/40 px-3 py-2 text-xs font-medium text-sky-300 transition-colors hover:bg-sky-500/10 disabled:opacity-50"
-          >
-            {checkingInbox ? "Checking…" : "Check inbox now"}
-          </button>
           <button
             onClick={runNow}
             disabled={runningNow}

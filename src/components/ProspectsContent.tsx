@@ -58,6 +58,7 @@ export function ProspectsContent() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [sendingNowId, setSendingNowId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
   const [addForm, setAddForm] = useState({
@@ -103,6 +104,23 @@ export function ProspectsContent() {
       .then((data) => setProducts(data.products ?? []))
       .catch(() => setProducts([]));
   }, []);
+
+  async function sendNow(id: string, name: string) {
+    setSendingNowId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/prospects/${id}/send-now`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not send email.");
+
+      setNotice(`Sent to ${name}.`);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send email.");
+    } finally {
+      setSendingNowId(null);
+    }
+  }
 
   async function handleAddProspect(e: React.FormEvent) {
     e.preventDefault();
@@ -369,6 +387,17 @@ export function ProspectsContent() {
               )}
 
               <div className="mt-3 flex flex-wrap gap-2">
+                {p.qualification_status === "qualified" &&
+                  !["unsubscribed", "bounced", "completed"].includes(p.sequence_status) &&
+                  p.email && (
+                    <button
+                      disabled={sendingNowId === p.id}
+                      onClick={() => sendNow(p.id, p.name)}
+                      className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300 transition-colors hover:bg-emerald-500/20 disabled:opacity-40"
+                    >
+                      {sendingNowId === p.id ? "Sending…" : "Send email now"}
+                    </button>
+                  )}
                 {(
                   [
                     "qualified",

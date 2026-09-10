@@ -10,11 +10,11 @@
  * - It never contacts anyone who isn't qualification_status = 'qualified'
  *   AND has a verified public email — both already enforced by
  *   listProspectsDueForOutreach().
- * - It never re-sends to anyone unsubscribed, responded (marked manually —
- *   see the Follow-ups view), paused, or already completed.
- * - It cannot detect replies. See Settings/Follow-ups: marking someone
- *   "responded" is a manual action a person takes after seeing a reply in
- *   their own inbox — this app has no inbound email visibility.
+ * - It never re-sends to anyone unsubscribed, responded, paused, or
+ *   already completed.
+ * - It doesn't send outside a prospect's business hours (see
+ *   isBusinessHoursFor). Replies are detected automatically via the
+ *   inbound email webhook — see src/app/api/webhooks/resend-inbound.
  */
 
 import { randomUUID } from "crypto";
@@ -47,6 +47,147 @@ const CANDIDATE_POOL_MULTIPLIER = 4;
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+/**
+ * MILESTONE 4I — the core "compose, send, record" logic, extracted so
+ * it can be reused both by the scheduled campaign executor below and a
+ * new on-demand "send now" action. This assumes eligibility has already
+ * been checked by the caller — it does the actual work, not the
+ * decision about whether to do it.
+ */
+export async function composeAndSendOutreachEmail(
+  userId: string,
+  prospect: Awaited<ReturnType<typeof getProspectById>>
+): Promise<StepResult> {
+  if (!prospect) {
+    return {
+      success: true,
+      summary: "Skipped — prospect no longer exists.",
+      resultData: { skipped: true, reason: "prospect_not_found" },
+    };
+  }
+
+  if (!prospect.product_id) {
+    return {
+      success: false,
+      summary: "This prospect has no associated product to write about.",
+      errorMessage: "Missing product_id.",
+      transientFailure: false,
+    };
+  }
+
+  const product = await getProductById(prospect.product_id);
+
+  if (!product) {
+    return {
+      success: false,
+      summary: "The associated product could not be found.",
+      errorMessage: `Product ${prospect.product_id} not found.`,
+      transientFailure: false,
+    };
+  }
+
+  const settings = await getSettings();
+  const unsubscribeToken = prospect.unsubscribe_token || randomUUID();
+
+  if (!prospect.unsubscribe_token) {
+    await updateProspectSequence(userId, prospect.id, {
+      unsubscribe_token: unsubscribeToken,
+    });
+  }
+
+  const step = prospect.emails_sent;
+  const previousSends = await listSendsForProspect(prospect.id);
+
+  let composed;
+  try {
+    composed = await composeOutreachEmail({
+      prospect,
+      product,
+      step,
+      previousSends,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not compose email.";
+    return {
+      success: false,
+      summary: `Could not compose an email for ${prospect.name}.`,
+      errorMessage: message,
+      transientFailure: true,
+    };
+  }
+
+  if (composed.action === "request_info") {
+    return {
+      success: false,
+      summary: `Needs more information about ${product.name} before writing to ${prospect.name}: ${composed.reason}`,
+      errorMessage: composed.reason,
+      transientFailure: false,
+      resultData: {
+        prospect_id: prospect.id,
+        product_id: product.id,
+        reason: composed.reason,
+      },
+    };
+  }
+
+  const sendResult = await sendEmail({
+    to: prospect.email!,
+    subject: composed.subject,
+    body: composed.body,
+    unsubscribeToken,
+    recipientName: prospect.prospect_type === "person" ? prospect.name : undefined,
+  });
+
+  await recordEmailSend({
+    user_id: userId,
+    prospect_id: prospect.id,
+    task_id: null,
+    step,
+    subject: composed.subject,
+    body: sendResult.finalBody,
+    status: sendResult.success ? "sent" : "failed",
+    error_message: sendResult.errorMessage,
+    direction: "outbound",
+    message_id: sendResult.messageId,
+  });
+
+  if (!sendResult.success) {
+    return {
+      success: false,
+      summary: `Could not send to ${prospect.name}: ${sendResult.errorMessage}`,
+      errorMessage: sendResult.errorMessage,
+      transientFailure: true,
+    };
+  }
+
+  const newEmailsSent = prospect.emails_sent + 1;
+  const isNowComplete = newEmailsSent > settings.max_follow_ups;
+
+  await updateProspectSequence(userId, prospect.id, {
+    sequence_status: isNowComplete ? "completed" : "active",
+    emails_sent: newEmailsSent,
+    last_sent_at: nowIso(),
+    next_send_at: isNowComplete
+      ? null
+      : new Date(
+          Date.now() +
+            settings.min_days_between_follow_ups * 24 * 60 * 60 * 1000
+        ).toISOString(),
+  });
+
+  return {
+    success: true,
+    summary: `Sent ${step === 0 ? "initial outreach" : `follow-up #${step}`} to ${prospect.name}.`,
+    resultData: {
+      prospect_id: prospect.id,
+      step,
+      subject: composed.subject,
+      sequence_status: isNowComplete ? "completed" : "active",
+    },
+  };
 }
 
 export const emailCampaignExecutor: TaskExecutor = {
@@ -176,132 +317,6 @@ export const emailCampaignExecutor: TaskExecutor = {
       };
     }
 
-    if (!prospect.product_id) {
-      return {
-        success: false,
-        summary: "This prospect has no associated product to write about.",
-        errorMessage: "Missing product_id.",
-        transientFailure: false,
-      };
-    }
-
-    const product = await getProductById(prospect.product_id);
-
-    if (!product) {
-      return {
-        success: false,
-        summary: "The associated product could not be found.",
-        errorMessage: `Product ${prospect.product_id} not found.`,
-        transientFailure: false,
-      };
-    }
-
-    const unsubscribeToken = prospect.unsubscribe_token || randomUUID();
-
-    if (!prospect.unsubscribe_token) {
-      await updateProspectSequence(parent.user_id, prospect.id, {
-        unsubscribe_token: unsubscribeToken,
-      });
-    }
-
-    const step = prospect.emails_sent;
-    const previousSends = await listSendsForProspect(prospect.id);
-
-    let composed;
-    try {
-      composed = await composeOutreachEmail({
-        prospect,
-        product,
-        step,
-        previousSends,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not compose email.";
-      return {
-        success: false,
-        summary: `Could not compose an email for ${prospect.name}.`,
-        errorMessage: message,
-        transientFailure: true,
-      };
-    }
-
-    if (composed.action === "request_info") {
-      // Not a transient failure — retrying immediately won't help, this
-      // needs Innocent to actually add more product detail. It'll be
-      // tried again fresh next time a campaign runs, in case that's
-      // happened by then.
-      return {
-        success: false,
-        summary: `Needs more information about ${product.name} before writing to ${prospect.name}: ${composed.reason}`,
-        errorMessage: composed.reason,
-        transientFailure: false,
-        resultData: {
-          prospect_id: prospect.id,
-          product_id: product.id,
-          reason: composed.reason,
-        },
-      };
-    }
-
-    const sendResult = await sendEmail({
-      to: prospect.email,
-      subject: composed.subject,
-      body: composed.body,
-      unsubscribeToken,
-      recipientName: prospect.prospect_type === "person" ? prospect.name : undefined,
-    });
-
-    await recordEmailSend({
-      user_id: parent.user_id,
-      prospect_id: prospect.id,
-      task_id: parent.id,
-      step,
-      subject: composed.subject,
-      body: sendResult.finalBody,
-      status: sendResult.success ? "sent" : "failed",
-      error_message: sendResult.errorMessage,
-      direction: "outbound",
-      message_id: sendResult.messageId,
-    });
-
-    if (!sendResult.success) {
-      return {
-        success: false,
-        summary: `Could not send to ${prospect.name}: ${sendResult.errorMessage}`,
-        errorMessage: sendResult.errorMessage,
-        // SMTP/network issues are worth retrying; a permanently
-        // misconfigured SMTP setup will keep failing, which is exactly
-        // the visibility a person needs, surfaced via the task's activity
-        // log rather than silently swallowed.
-        transientFailure: true,
-      };
-    }
-
-    const newEmailsSent = prospect.emails_sent + 1;
-    const isNowComplete = newEmailsSent > settings.max_follow_ups;
-
-    await updateProspectSequence(parent.user_id, prospect.id, {
-      sequence_status: isNowComplete ? "completed" : "active",
-      emails_sent: newEmailsSent,
-      last_sent_at: nowIso(),
-      next_send_at: isNowComplete
-        ? null
-        : new Date(
-            Date.now() +
-              settings.min_days_between_follow_ups * 24 * 60 * 60 * 1000
-          ).toISOString(),
-    });
-
-    return {
-      success: true,
-      summary: `Sent ${step === 0 ? "initial outreach" : `follow-up #${step}`} to ${prospect.name}.`,
-      resultData: {
-        prospect_id: prospect.id,
-        step,
-        subject: composed.subject,
-        sequence_status: isNowComplete ? "completed" : "active",
-      },
-    };
+    return composeAndSendOutreachEmail(parent.user_id, prospect);
   },
 };

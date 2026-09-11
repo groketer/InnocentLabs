@@ -43,6 +43,27 @@ export interface AppSettings {
   autonomous_replies: boolean;
   /** Safety cap: after this many autonomous replies in one conversation, stop and flag for human review regardless of what the AI would otherwise do. */
   max_autonomous_replies_per_conversation: number;
+
+  /**
+   * MILESTONE 4T — full autonomy mode.
+   *
+   * agent_paused is the master switch: when true, ALL autonomous
+   * activity stops — no new prospecting, campaigns, replies, product
+   * study, nothing — regardless of what the individual autonomous_*
+   * toggles below say. This is the literal "tell it to stop" Innocent
+   * described; everything else defaults to genuinely autonomous
+   * operation, this is the one lever that overrides all of it at once.
+   */
+  agent_paused: boolean;
+
+  /**
+   * When true, the agent periodically reviews each product's stored
+   * knowledge on its own, identifies genuine gaps or improvement
+   * opportunities, and raises them as questions (for Innocent to answer)
+   * or suggestions (for Innocent to consider) rather than silently
+   * working with incomplete information indefinitely.
+   */
+  autonomous_product_study: boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -56,6 +77,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   auto_qualify_confidence_threshold: 0.4,
   autonomous_replies: true,
   max_autonomous_replies_per_conversation: 15,
+  agent_paused: false,
+  autonomous_product_study: true,
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<
@@ -68,6 +91,8 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
   "autonomous_campaigns",
   "autonomous_qualification",
   "autonomous_replies",
+  "agent_paused",
+  "autonomous_product_study",
 ]);
 
 function coerce(key: keyof AppSettings, raw: string): number | boolean {
@@ -117,6 +142,8 @@ export interface UpdateSettingsInput {
   auto_qualify_confidence_threshold?: number;
   autonomous_replies?: boolean;
   max_autonomous_replies_per_conversation?: number;
+  agent_paused?: boolean;
+  autonomous_product_study?: boolean;
 }
 
 function validate(input: UpdateSettingsInput): void {

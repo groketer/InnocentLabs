@@ -38,6 +38,7 @@ import { startProspectingScheduler, ensureDailyProspectingTask } from "./prospec
 import { startEmailCampaignScheduler, ensureDailyEmailCampaignTask } from "./emailCampaignScheduler";
 import { startAuditScheduler, ensureDailyAuditTask } from "./auditScheduler";
 import { startDeepQualificationScheduler, ensureDailyDeepQualificationTask } from "./deepQualificationScheduler";
+import { startProductStudyScheduler, ensureDailyProductStudyTask } from "./productStudyScheduler";
 import {
   listActiveTopLevelTasks,
   listSubtasks,
@@ -714,6 +715,16 @@ export async function tick(): Promise<void> {
     console.error("[engine] Could not record tick timestamp:", error);
   }
 
+  // MILESTONE 4T — the master "stop" switch. When paused, skip all
+  // autonomous work entirely — no scheduler checks, no task processing
+  // — while still recording the tick timestamp above, so the dashboard's
+  // tick-health indicator doesn't falsely read "automation isn't
+  // running" when it's actually just deliberately paused.
+  const settings = await getSettings();
+  if (settings.agent_paused) {
+    return;
+  }
+
   await recoverStaleRunningTasks();
   await runInboundEmailCheckIfDue();
 
@@ -732,6 +743,7 @@ export async function tick(): Promise<void> {
     await ensureDailyPortfolioRefresh();
     await ensureDailyAuditTask();
     await ensureDailyDeepQualificationTask();
+    await ensureDailyProductStudyTask();
   } catch (error) {
     console.error("[engine] A scheduler check failed (contained, tick continues):", error);
   }
@@ -842,6 +854,7 @@ export async function startEngine(): Promise<void> {
   startEmailCampaignScheduler();
   startAuditScheduler();
   startDeepQualificationScheduler();
+  startProductStudyScheduler();
 
   // Same bug class as the tick-timestamp fix above, found during the same
   // investigation: fire-and-forget is unsafe here too, since this runs

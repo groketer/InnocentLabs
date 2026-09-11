@@ -469,6 +469,54 @@ async function runMigrations(db: Db): Promise<void> {
       },
 
       /*
+       * MILESTONE 4T — full autonomy mode: product study.
+       *
+       * When the agent periodically reviews a product's own knowledge
+       * and finds a genuine gap it can't resolve on its own, it raises
+       * a question here rather than silently working with incomplete
+       * information indefinitely. Answering one appends to the
+       * product's supplementary_knowledge.
+       */
+      {
+        sql: `CREATE TABLE IF NOT EXISTS agent_questions (
+          id          TEXT PRIMARY KEY,
+          user_id     TEXT NOT NULL,
+          product_id  TEXT REFERENCES products(id),
+          question    TEXT NOT NULL,
+          status      TEXT NOT NULL DEFAULT 'pending',
+          answer      TEXT,
+          created_at  TEXT NOT NULL DEFAULT (${NOW_ISO_SQL}),
+          answered_at TEXT
+        )`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_agent_questions_user_status
+          ON agent_questions(user_id, status, created_at)`,
+      },
+
+      /*
+       * MILESTONE 4T — the same product-study review's other output: a
+       * genuine improvement opportunity worth Innocent's attention, not
+       * a question needing an answer to proceed — e.g. "this product's
+       * positioning could better emphasize X" or "consider adding Y to
+       * the knowledge base".
+       */
+      {
+        sql: `CREATE TABLE IF NOT EXISTS agent_suggestions (
+          id          TEXT PRIMARY KEY,
+          user_id     TEXT NOT NULL,
+          product_id  TEXT REFERENCES products(id),
+          suggestion  TEXT NOT NULL,
+          dismissed   BOOLEAN NOT NULL DEFAULT false,
+          created_at  TEXT NOT NULL DEFAULT (${NOW_ISO_SQL})
+        )`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_agent_suggestions_user_dismissed
+          ON agent_suggestions(user_id, dismissed, created_at)`,
+      },
+
+      /*
        * Milestone 3D — Prospect intelligence. See the original schema
        * comment history in git for the full rationale; unchanged here
        * beyond the Postgres syntax translation.

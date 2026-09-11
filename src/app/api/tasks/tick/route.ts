@@ -45,14 +45,6 @@ async function isAuthorized(req: NextRequest, rawBody: string): Promise<boolean>
   const signature = req.headers.get("upstash-signature");
 
   if (signature && process.env.QSTASH_CURRENT_SIGNING_KEY) {
-    // MILESTONE 3Z-11 — defensive trimming. My own verification code is
-    // proven correct (tested directly against a real, correctly-signed
-    // JWT), the key format and environment scope are both confirmed
-    // right, yet verification still fails — the remaining likely cause
-    // is an invisible whitespace character from a copy-paste, which
-    // breaks exact HMAC matching without being visible anywhere. Trimming
-    // here removes this entire class of problem going forward,
-    // regardless of how the values get pasted in the future.
     const currentSigningKey = process.env.QSTASH_CURRENT_SIGNING_KEY.trim();
     const nextSigningKey = (process.env.QSTASH_NEXT_SIGNING_KEY ?? "").trim();
 
@@ -61,35 +53,27 @@ async function isAuthorized(req: NextRequest, rawBody: string): Promise<boolean>
       nextSigningKey,
     });
 
-    // MILESTONE 3Z-9 — the length alone (32, unchanged across a full key
-    // rotation) wasn't enough to diagnose this. A safe, partial preview
-    // — first/last few characters only, never the full secret — lets
-    // Innocent directly compare what's actually being read against what
-    // he pasted into Upstash, without exposing the real key anywhere.
-    const safePreview = (value: string | undefined): string => {
-      if (!value) return "(not set)";
-      if (value.length <= 10) return `${value.length} chars, too short to preview safely`;
-      return `${value.slice(0, 6)}...${value.slice(-4)} (${value.length} chars)`;
-    };
-
-    const rawCurrentLength = process.env.QSTASH_CURRENT_SIGNING_KEY.length;
-    const trimmedCurrentLength = currentSigningKey.length;
-    if (rawCurrentLength !== trimmedCurrentLength) {
-      console.warn(
-        `[api/tasks/tick] QSTASH_CURRENT_SIGNING_KEY had whitespace trimmed: ${rawCurrentLength} chars raw -> ${trimmedCurrentLength} chars trimmed. This was very likely the actual bug.`
-      );
+    // MILESTONE 4U — matches the depth of /api/debug/qstash-diagnose,
+    // applied directly at this route's real destination URL rather than
+    // a substitute path, since the JWT's sub claim is tied to the exact
+    // URL QStash published to — a pass at a different path doesn't
+    // prove this one would also pass.
+    try {
+      const parts = signature.split(".");
+      if (parts.length === 3) {
+        const payloadJson = Buffer.from(parts[1], "base64url").toString("utf8");
+        const claims = JSON.parse(payloadJson);
+        console.log(
+          "[api/tasks/tick] JWT claims on this request:",
+          JSON.stringify({ sub: claims.sub, iss: claims.iss, exp: claims.exp, nbf: claims.nbf, jti: claims.jti }),
+          `| actual req.url: ${req.url}`,
+          `| subMatchesReqUrl: ${claims.sub === req.url}`
+        );
+      }
+    } catch (error) {
+      console.error("[api/tasks/tick] Could not decode JWT claims for logging:", error);
     }
 
-    // MILESTONE 3Z-8 — every official Upstash example (TS, Python, Go
-    // SDKs) includes a url parameter; our code never did, and
-    // verification has been failing consistently rather than
-    // intermittently. Worth aligning with documented usage — but
-    // defensively: if req.url doesn't exactly match what QStash actually
-    // signed against (a real possibility depending on how Vercel
-    // forwards the request), a strict url check could turn a previously
-    // working path into a strictly-failing one. Try with it; if that
-    // specific attempt fails, retry without it before giving up, so this
-    // can only help, never regress something that worked before.
     try {
       const valid = await receiver.verify({ signature, body: rawBody, url: req.url });
       if (valid) return true;
@@ -111,6 +95,11 @@ async function isAuthorized(req: NextRequest, rawBody: string): Promise<boolean>
         return true;
       }
     } catch (error) {
+      const safePreview = (value: string | undefined): string => {
+        if (!value) return "(not set)";
+        if (value.length <= 10) return `${value.length} chars, too short to preview safely`;
+        return `${value.slice(0, 6)}...${value.slice(-4)} (${value.length} chars)`;
+      };
       console.error(
         "[api/tasks/tick] QStash verify WITHOUT url also threw:",
         error instanceof Error ? error.message : error,
@@ -119,9 +108,6 @@ async function isAuthorized(req: NextRequest, rawBody: string): Promise<boolean>
           `incoming signature header: ${safePreview(signature)}`
       );
     }
-    // Fall through to the session-cookie check rather than failing
-    // outright — a malformed/expired QStash signature shouldn't also
-    // block a legitimate browser-originated request.
   }
 
   const password = process.env.APP_PASSWORD;

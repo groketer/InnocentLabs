@@ -6,6 +6,12 @@ import type { AgentTask } from "@/lib/types";
 import { STATUS_META, formatProgress, formatTime } from "@/lib/format";
 import { GlobalSearch } from "./GlobalSearch";
 
+interface DashboardAlert {
+  severity: "critical" | "warning";
+  message: string;
+  count?: number;
+}
+
 interface Stats {
   active_tasks: number;
   completed_today: number;
@@ -14,6 +20,11 @@ interface Stats {
   prospects_needs_review: number;
   active_sequences: number;
   emails_sent_today: number;
+  emails_first_contact_today: number;
+  emails_follow_up_today: number;
+  emails_replies_today: number;
+  new_prospects_today: number;
+  alerts: DashboardAlert[];
 }
 
 function StatBlock({
@@ -128,6 +139,28 @@ export function DashboardContent() {
         </div>
       )}
 
+      {stats && stats.alerts.length > 0 && (
+        <div className="mt-4 space-y-2">
+          {stats.alerts.map((alert, i) => (
+            <div
+              key={i}
+              className={`flex items-center gap-2 rounded-md border px-4 py-3 text-sm ${
+                alert.severity === "critical"
+                  ? "border-red-500/40 bg-red-500/10 text-red-300"
+                  : "border-amber-500/40 bg-amber-500/10 text-amber-300"
+              }`}
+            >
+              <span
+                className={`h-2 w-2 shrink-0 rounded-full ${
+                  alert.severity === "critical" ? "bg-red-400" : "bg-amber-400"
+                }`}
+              />
+              {alert.message}
+            </div>
+          ))}
+        </div>
+      )}
+
       {stats && (
         <div className="mt-6 flex flex-wrap divide-x divide-ink-700 rounded-md border border-ink-700 bg-ink-900">
           <StatBlock value={stats.active_tasks} label="Active tasks" />
@@ -137,6 +170,7 @@ export function DashboardContent() {
             label="Prospects found"
             href="/prospects"
           />
+          <StatBlock value={stats.new_prospects_today} label="New today" href="/prospects" />
           <StatBlock
             value={stats.prospects_qualified}
             label="Qualified"
@@ -147,7 +181,15 @@ export function DashboardContent() {
             label="Sequences in flight"
             href="/follow-ups"
           />
-          <StatBlock value={stats.emails_sent_today} label="Sent today" />
+        </div>
+      )}
+
+      {stats && (
+        <div className="mt-3 flex flex-wrap divide-x divide-ink-700 rounded-md border border-ink-700 bg-ink-900">
+          <StatBlock value={stats.emails_sent_today} label="Emails sent today" />
+          <StatBlock value={stats.emails_first_contact_today} label="First contact" />
+          <StatBlock value={stats.emails_follow_up_today} label="Follow-ups" />
+          <StatBlock value={stats.emails_replies_today} label="Replies" />
         </div>
       )}
 

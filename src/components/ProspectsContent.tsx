@@ -60,6 +60,7 @@ export function ProspectsContent() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [sendingNowId, setSendingNowId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [productFilter, setProductFilter] = useState("");
   const [decisionSelection, setDecisionSelection] = useState<Record<string, string>>({});
   const [showAddModal, setShowAddModal] = useState(false);
   const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
@@ -82,7 +83,21 @@ export function ProspectsContent() {
   async function load() {
     try {
       const value = STATUS_FILTERS[filterIndex].value;
-      const qs = value ? `?qualification_status=${value}` : "";
+      const params = new URLSearchParams();
+      if (value) params.set("qualification_status", value);
+      if (productFilter) params.set("product_id", productFilter);
+      // MILESTONE 4Z — a real, confirmed bug this fixes: the API's
+      // default limit (50, newest-first) was silently hiding older —
+      // but still perfectly valid, qualified — prospects from view once
+      // more than 50 newer ones (from other products) existed. A whole
+      // book's worth of 39 prospects went completely invisible this
+      // way, and the agent spent an entire session chasing a phantom
+      // "reassignment" problem that didn't exist, because the data was
+      // never actually wrong — it just was never being fetched. 200 is
+      // the API's own hard cap, so this is the most this endpoint can
+      // return in one call regardless.
+      params.set("limit", "200");
+      const qs = params.toString() ? `?${params.toString()}` : "";
       const res = await fetch(`/api/prospects${qs}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Could not load prospects.");
@@ -98,7 +113,7 @@ export function ProspectsContent() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterIndex]);
+  }, [filterIndex, productFilter]);
 
   useEffect(() => {
     fetch("/api/products")
@@ -353,6 +368,18 @@ export function ProspectsContent() {
             {f.label}
           </button>
         ))}
+        <select
+          value={productFilter}
+          onChange={(e) => setProductFilter(e.target.value)}
+          className="rounded-full border border-ink-600 bg-ink-800 px-3 py-1 text-xs text-white"
+        >
+          <option value="">All products</option>
+          {products.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
         <input
           type="text"
           value={searchQuery}

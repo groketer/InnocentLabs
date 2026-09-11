@@ -33,11 +33,11 @@
  * identical — only the trigger mechanism differs by environment.
  */
 
-import { startPortfolioScheduler } from "./portfolioScheduler";
-import { startProspectingScheduler } from "./prospectingScheduler";
-import { startEmailCampaignScheduler } from "./emailCampaignScheduler";
-import { startAuditScheduler } from "./auditScheduler";
-import { startDeepQualificationScheduler } from "./deepQualificationScheduler";
+import { startPortfolioScheduler, ensureDailyPortfolioRefresh } from "./portfolioScheduler";
+import { startProspectingScheduler, ensureDailyProspectingTask } from "./prospectingScheduler";
+import { startEmailCampaignScheduler, ensureDailyEmailCampaignTask } from "./emailCampaignScheduler";
+import { startAuditScheduler, ensureDailyAuditTask } from "./auditScheduler";
+import { startDeepQualificationScheduler, ensureDailyDeepQualificationTask } from "./deepQualificationScheduler";
 import {
   listActiveTopLevelTasks,
   listSubtasks,
@@ -716,6 +716,25 @@ export async function tick(): Promise<void> {
 
   await recoverStaleRunningTasks();
   await runInboundEmailCheckIfDue();
+
+  // MILESTONE 4Q — a real gap this closes: these were previously only
+  // checked once per day, via a Vercel cron job — meaning if that cron
+  // ever failed silently, or simply because it only fires once daily,
+  // autonomous work (prospecting, follow-ups, portfolio refresh, audits,
+  // deep qualification) was gated on a single daily trigger rather than
+  // running whenever the app is actually active. Each of these functions
+  // is already idempotent and cheap to call when nothing is due — safe
+  // to check on every tick (~every 10 minutes via QStash) rather than
+  // waiting for a single daily window.
+  try {
+    await ensureDailyProspectingTask();
+    await ensureDailyEmailCampaignTask();
+    await ensureDailyPortfolioRefresh();
+    await ensureDailyAuditTask();
+    await ensureDailyDeepQualificationTask();
+  } catch (error) {
+    console.error("[engine] A scheduler check failed (contained, tick continues):", error);
+  }
 
   const tasks = await listActiveTopLevelTasks();
 

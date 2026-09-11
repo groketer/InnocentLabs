@@ -35,6 +35,16 @@ const PROSPECTING_TASK_TYPE = "web_prospecting";
 
 const PROSPECTING_TITLE = "Autonomous prospecting run";
 
+// MILESTONE 4Q — the actual cause of "sluggish prospecting": one task
+// per day, rotating across an 18-20 product portfolio, meant each
+// individual product only got prospected roughly once every 2-3 weeks.
+// Allowing several runs per day (each still rotating toward whichever
+// product has the fewest prospects) is what actually fixes this, not
+// just increasing per-run limits — this is configurable so it can be
+// tuned down from Settings if the pace ever needs throttling back.
+const DEFAULT_MAX_PROSPECTING_RUNS_PER_DAY = 6;
+const MIN_MINUTES_BETWEEN_PROSPECTING_RUNS = 45;
+
 declare global {
   // eslint-disable-next-line no-var
   var __innocentProspectingSchedulerStarted: boolean | undefined;
@@ -60,31 +70,43 @@ async function getCurrentUserId(): Promise<string | null> {
   return row?.user_id ?? null;
 }
 
-async function hasProspectingTaskToday(userId: string): Promise<boolean> {
+async function canCreateProspectingTaskNow(userId: string): Promise<boolean> {
   const db = await getDb();
   const datePrefix = `${todayKey()}%`;
 
   const result = await db.execute({
     sql: `
-      SELECT id
+      SELECT created_at
       FROM agent_tasks
       WHERE user_id = ?
         AND task_type = ?
         AND title = ?
         AND parent_task_id IS NULL
         AND created_at LIKE ?
-      LIMIT 1
+      ORDER BY created_at DESC
     `,
     args: [userId, PROSPECTING_TASK_TYPE, PROSPECTING_TITLE, datePrefix],
   });
 
-  const row = result.rows[0] as unknown as { id: string } | undefined;
+  const rows = result.rows as unknown as { created_at: string }[];
 
-  return !!row;
+  if (rows.length >= DEFAULT_MAX_PROSPECTING_RUNS_PER_DAY) {
+    return false;
+  }
+
+  if (rows.length > 0) {
+    const lastCreatedAt = new Date(rows[0].created_at).getTime();
+    const minutesSinceLast = (Date.now() - lastCreatedAt) / 60_000;
+    if (minutesSinceLast < MIN_MINUTES_BETWEEN_PROSPECTING_RUNS) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 async function createDailyProspectingTask(userId: string): Promise<void> {
-  if (await hasProspectingTaskToday(userId)) {
+  if (!(await canCreateProspectingTaskNow(userId))) {
     return;
   }
 

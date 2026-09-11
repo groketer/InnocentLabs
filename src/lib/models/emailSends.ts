@@ -131,12 +131,21 @@ export async function countSendsToday(userId: string): Promise<number> {
   const db = await getDb();
   const todayPrefix = `${new Date().toISOString().slice(0, 10)}%`;
 
+  // MILESTONE 4Q — a real bug this fixes: this previously counted ALL
+  // sent emails regardless of direction, meaning AI-composed replies to
+  // prospects actively engaging in conversation competed for the same
+  // daily budget as new outreach and follow-ups. daily_send_limit exists
+  // for deliverability/spam-prevention on UNSOLICITED sends — replying
+  // promptly to someone who's already engaging is a different thing
+  // entirely and shouldn't be rate-limited by the same cap, or a single
+  // active conversation could silently starve the day's follow-ups.
   const result = await db.execute({
     sql: `
       SELECT COUNT(*) as c
       FROM email_sends
       WHERE user_id = ?
         AND status = 'sent'
+        AND direction = 'outbound'
         AND sent_at LIKE ?
     `,
     args: [userId, todayPrefix],

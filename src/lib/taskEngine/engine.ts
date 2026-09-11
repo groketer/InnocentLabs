@@ -711,6 +711,7 @@ export async function tick(): Promise<void> {
   // the real tick work that follows.
   try {
     await recordTickTimestamp();
+    console.log("[engine] recordTickTimestamp() succeeded at", new Date().toISOString());
   } catch (error) {
     console.error("[engine] Could not record tick timestamp:", error);
   }

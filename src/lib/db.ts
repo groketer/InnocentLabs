@@ -210,7 +210,30 @@ async function createConnection(): Promise<Db> {
   // (matching what our QueryResult/rowsAffected shape expects) instead of
   // a bare array of rows, which is the driver's default for the plain
   // template-tag form.
-  const sql = neon(resolveConnectionString(), { fullResults: true });
+  // MILESTONE 4X — the actual root cause of a genuinely baffling bug:
+  // a brand-new route, calling the exact same read function as a
+  // long-used one, showed the exact same hours-stale value — meaning
+  // the staleness was tied to the QUERY itself, not any specific route
+  // or its caching config. Next.js 14's App Router caches fetch()
+  // calls by default UNLESS explicitly told otherwise, and — critically
+  // — a route's own `dynamic = "force-dynamic"` does not reliably
+  // propagate that "no cache" default down into a third-party
+  // library's OWN internal fetch() calls (this Neon driver makes its
+  // queries via fetch() under the hood). The result: the very first
+  // time any given SQL query ever ran, its result got cached
+  // indefinitely by Next.js's Data Cache — and every subsequent call
+  // to that exact same query, from ANY route, kept serving that one
+  // frozen answer forever, no matter how many times the underlying row
+  // was actually updated. Writes (INSERT/UPDATE) were never affected,
+  // since their body differs on every call — this is a read-only
+  // problem. fetchOptions merges directly into Neon's own fetch call,
+  // so this forces every single query, without exception, to bypass
+  // Next.js's cache at the source rather than relying on it to
+  // correctly infer this from route-level config.
+  const sql = neon(resolveConnectionString(), {
+    fullResults: true,
+    fetchOptions: { cache: "no-store" },
+  });
 
   const db: Db = {
     async execute<T>(

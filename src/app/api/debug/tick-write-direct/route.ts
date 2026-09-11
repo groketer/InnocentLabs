@@ -17,6 +17,14 @@ const LAST_TICK_KEY = "last_tick_at";
  * rather than the underlying write mechanism.
  */
 export async function POST() {
+  return runDiagnostic();
+}
+
+export async function GET() {
+  return runDiagnostic();
+}
+
+async function runDiagnostic() {
   const before = new Date().toISOString();
   const db = await getDb();
 

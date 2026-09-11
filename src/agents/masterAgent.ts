@@ -33,6 +33,7 @@ import { getProspectsTool } from "./tools/getProspectsTool";
 import { getFollowUpsStatusTool } from "./tools/getFollowUpsStatusTool";
 import { saveMemoryTool } from "./tools/saveMemoryTool";
 import { deleteProspectsTool } from "./tools/deleteProspectsTool";
+import { reassignProspectToProductTool } from "./tools/reassignProspectToProductTool";
 import { getSettingsTool } from "./tools/getSettingsTool";
 import { listProductsTool } from "./tools/listProductsTool";
 import { getActivitySummaryTool } from "./tools/getActivitySummaryTool";
@@ -566,6 +567,7 @@ tools: [
   getResearchResultTool,
   saveMemoryTool,
   deleteProspectsTool,
+  reassignProspectToProductTool,
   getProspectsTool,
   getFollowUpsStatusTool,
   getSettingsTool,

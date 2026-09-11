@@ -523,6 +523,29 @@ async function resolvePortfolioProduct(
     );
   }
 
+  // MILESTONE 4Y — a real, confirmed bug this fixes: this function is
+  // tried FIRST by extractProductName(), and until now only matched an
+  // exact (whitespace/case-normalized) name — with no fallback for a
+  // short form like "Patterns of Opportunity" against the full stored
+  // title "Patterns of Opportunity: Seeing What Others Overlook". When
+  // it failed, extractProductName() returned null immediately rather
+  // than ever trying its own, more forgiving regex-based match below —
+  // meaning a later task using the short form silently fell back to
+  // auto-selecting a random, unrelated product instead. Matching the
+  // same colon-boundary logic resolveProductHint() already uses here
+  // closes that gap at its actual source.
+  const colonBoundaryMatch = products.find((product) => {
+    const name = normalizeWhitespace(product.name).toLowerCase();
+    return (
+      normalizedRequested.startsWith(`${name}:`) ||
+      name.startsWith(`${normalizedRequested}:`)
+    );
+  });
+
+  if (colonBoundaryMatch) {
+    return getProductByName(colonBoundaryMatch.name);
+  }
+
   return null;
 }
 

@@ -454,19 +454,44 @@ export async function listProductsWithUrl(): Promise<Product[]> {
 /**
  * Returns a single product by exact name.
  */
+/**
+ * MILESTONE 4Y — a real, confirmed bug this fixes: this previously did an
+ * exact string match only. When someone referred to "Patterns of
+ * Opportunity" (the natural short form) while the stored name is the
+ * full title "Patterns of Opportunity: Seeing What Others Overlook",
+ * this returned null — and the agent then confidently told the user no
+ * such product existed at all, which was simply wrong, not a genuine
+ * data gap. Tries an exact match first (fast, and correct when the name
+ * is already exact), then falls back to a case-insensitive partial
+ * match in both directions — the stored name contains the query, or the
+ * query contains the stored name — so a short form, a slightly
+ * different case, or a trailing subtitle all still resolve correctly.
+ */
 export async function getProductByName(
   name: string
 ): Promise<Product | null> {
   const db = await getDb();
+  const trimmed = name.trim();
 
-  const result = await db.execute({
+  const exact = await db.execute({
     sql: `SELECT * FROM products WHERE name = ?`,
-    args: [name],
+    args: [trimmed],
   });
+  const exactMatch = exact.rows[0] as unknown as Product | undefined;
+  if (exactMatch) return exactMatch;
 
-  const product = result.rows[0] as unknown as Product | undefined;
+  const fuzzy = await db.execute({
+    sql: `
+      SELECT * FROM products
+      WHERE name ILIKE '%' || ? || '%' OR ? ILIKE '%' || name || '%'
+      ORDER BY length(name) ASC
+      LIMIT 1
+    `,
+    args: [trimmed, trimmed],
+  });
+  const fuzzyMatch = fuzzy.rows[0] as unknown as Product | undefined;
 
-  return product ?? null;
+  return fuzzyMatch ?? null;
 }
 
 export async function getProductById(

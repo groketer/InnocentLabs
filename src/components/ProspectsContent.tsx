@@ -60,6 +60,7 @@ export function ProspectsContent() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [sendingNowId, setSendingNowId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [decisionSelection, setDecisionSelection] = useState<Record<string, string>>({});
   const [showAddModal, setShowAddModal] = useState(false);
   const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
   const [addForm, setAddForm] = useState({
@@ -105,6 +106,36 @@ export function ProspectsContent() {
       .then((data) => setProducts(data.products ?? []))
       .catch(() => setProducts([]));
   }, []);
+
+  async function resolveDecision(id: string, action: { type: "delete" } | { type: "reassign"; productId: string }) {
+    setSendingNowId(id); // reuse as a general "busy" indicator for this row
+    setError(null);
+    try {
+      const body =
+        action.type === "delete"
+          ? { action: "delete" }
+          : { action: "reassign", productId: action.productId };
+      const res = await fetch(`/api/prospects/${id}/resolve-product-decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not resolve decision.");
+
+      if (data.resolved === "deleted") {
+        setProspects((prev) => (prev ? prev.filter((p) => p.id !== id) : prev));
+        setNotice(`${data.name ?? "Prospect"} deleted.`);
+      } else {
+        setNotice(`${data.prospect?.name ?? "Prospect"} reassigned.`);
+        load();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not resolve decision.");
+    } finally {
+      setSendingNowId(null);
+    }
+  }
 
   async function sendNow(id: string, name: string) {
     setSendingNowId(id);
@@ -199,6 +230,27 @@ export function ProspectsContent() {
       if (data.cleanup?.action === "reassigned") {
         setProspects((prev) => (prev ? prev.filter((p) => p.id !== id) : prev));
         setNotice(`${data.prospect?.name ?? "Prospect"} was moved to ${data.cleanup.reassignedTo} instead — a better fit.`);
+        return;
+      }
+      if (data.cleanup?.action === "needs_decision") {
+        // MILESTONE 4R — genuinely uncertain between candidates. Keep the
+        // prospect visible with the decision UI rather than guessing or
+        // auto-deleting a potentially valuable prospect.
+        setProspects((prev) =>
+          prev
+            ? prev.map((p) =>
+                p.id === id
+                  ? {
+                      ...p,
+                      qualification_status: status,
+                      needs_product_decision: true,
+                      candidate_product_names: data.cleanup.candidates ?? [],
+                    }
+                  : p
+              )
+            : prev
+        );
+        setNotice(`${data.prospect?.name ?? "Prospect"} might fit another product — pick one below, or delete.`);
         return;
       }
       if (data.cleanup?.action === "kept") {
@@ -404,6 +456,51 @@ export function ProspectsContent() {
                       Public profile
                     </a>
                   )}
+                </div>
+              )}
+
+              {p.needs_product_decision && (
+                <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+                  <p className="text-xs text-amber-300">
+                    Not a fit here, but might fit another product — pick one, or delete.
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <select
+                      value={decisionSelection[p.id] ?? ""}
+                      onChange={(e) =>
+                        setDecisionSelection({ ...decisionSelection, [p.id]: e.target.value })
+                      }
+                      className="rounded-md border border-ink-600 bg-ink-950 px-2 py-1 text-xs text-white"
+                    >
+                      <option value="">Choose a product…</option>
+                      {(p.candidate_product_names ?? []).map((name) => {
+                        const match = products.find(
+                          (prod) => prod.name.toLowerCase() === name.toLowerCase()
+                        );
+                        return match ? (
+                          <option key={match.id} value={match.id}>
+                            {match.name}
+                          </option>
+                        ) : null;
+                      })}
+                    </select>
+                    <button
+                      disabled={!decisionSelection[p.id] || sendingNowId === p.id}
+                      onClick={() =>
+                        resolveDecision(p.id, { type: "reassign", productId: decisionSelection[p.id] })
+                      }
+                      className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40"
+                    >
+                      Reassign
+                    </button>
+                    <button
+                      disabled={sendingNowId === p.id}
+                      onClick={() => resolveDecision(p.id, { type: "delete" })}
+                      className="rounded-md border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs text-red-300 hover:bg-red-500/20 disabled:opacity-40"
+                    >
+                      Delete instead
+                    </button>
+                  </div>
                 </div>
               )}
 

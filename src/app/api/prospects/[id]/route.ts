@@ -5,6 +5,7 @@ import {
   deleteProspect,
   reassignProspectToProduct,
   getProspectById,
+  markProspectNeedsProductDecision,
 } from "@/lib/models/prospects";
 import { listProductsWithUrl } from "@/lib/models/products";
 import { recordApiUsage } from "@/lib/models/apiUsage";
@@ -25,8 +26,9 @@ const MODEL = "gpt-4.1-mini";
  * for in the first place.
  */
 async function checkOtherProductFitAndCleanUp(prospectId: string): Promise<{
-  action: "deleted" | "reassigned" | "kept";
+  action: "deleted" | "reassigned" | "kept" | "needs_decision";
   reassignedTo?: string;
+  candidates?: string[];
 }> {
   const prospect = await getProspectById(LOCAL_USER_ID, prospectId);
   if (!prospect) return { action: "kept" };
@@ -54,11 +56,24 @@ async function checkOtherProductFitAndCleanUp(prospectId: string): Promise<{
         content: `
 You are checking whether a prospect who was just disqualified for one
 product might genuinely fit a DIFFERENT product in the same portfolio.
-Be honest and skeptical — only say yes if there's a real, evidence-based
-case, not just because it seems plausible. Most disqualified prospects
-fit nothing else either; that's the expected, normal outcome.
+Be honest and skeptical — only say a confident match exists if there's a
+real, evidence-based case, not just because it seems plausible. Most
+disqualified prospects fit nothing else either; that's the expected,
+normal outcome.
 
-Respond with ONLY a JSON object: {"fits_another_product": boolean, "best_fit_product_name": string | null, "reasoning": string}
+MILESTONE 4R — three possible outcomes, not two. Don't force a decision
+you're not actually confident in:
+- CONFIDENT MATCH: one product is a genuinely strong, evidence-backed
+  fit. Set fits_another_product true, name it in best_fit_product_name.
+- CONFIDENT NO FIT: nothing else in the portfolio plausibly fits. Set
+  fits_another_product false, leave candidate_products empty.
+- GENUINELY UNCERTAIN: there are one or more plausible candidates but
+  you're not confident enough to commit to one, or evidence is too thin
+  to decide reliably. Set fits_another_product false AND list up to 3
+  candidate product names in candidate_products — this defers the call
+  to a person instead of guessing.
+
+Respond with ONLY a JSON object: {"fits_another_product": boolean, "best_fit_product_name": string | null, "candidate_products": string[], "reasoning": string}
 `,
       },
       {
@@ -88,7 +103,11 @@ ${otherProducts.map((p) => `- ${p.name}: ${p.description ?? p.category}`).join("
     });
   }
 
-  let parsed: { fits_another_product?: boolean; best_fit_product_name?: string | null };
+  let parsed: {
+    fits_another_product?: boolean;
+    best_fit_product_name?: string | null;
+    candidate_products?: string[];
+  };
   try {
     parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
   } catch {
@@ -103,6 +122,15 @@ ${otherProducts.map((p) => `- ${p.name}: ${p.description ?? p.category}`).join("
       await reassignProspectToProduct(LOCAL_USER_ID, prospectId, match.id);
       return { action: "reassigned", reassignedTo: match.name };
     }
+  }
+
+  const candidates = (parsed.candidate_products ?? []).filter((name) =>
+    otherProducts.some((p) => p.name.toLowerCase() === name.toLowerCase())
+  );
+
+  if (candidates.length > 0) {
+    await markProspectNeedsProductDecision(LOCAL_USER_ID, prospectId, candidates);
+    return { action: "needs_decision", candidates };
   }
 
   await deleteProspect(LOCAL_USER_ID, prospectId);

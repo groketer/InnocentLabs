@@ -121,6 +121,16 @@ export interface Prospect {
    */
   unsubscribe_token?: string;
 
+  /**
+   * MILESTONE 4R — set when the AI checking "does this disqualified
+   * prospect fit another product" is genuinely uncertain between
+   * candidates, rather than confident enough to auto-reassign or
+   * auto-delete. candidate_product_names holds its suggested options
+   * for a person to choose from.
+   */
+  needs_product_decision?: boolean;
+  candidate_product_names?: string[];
+
   created_at: string;
   updated_at: string;
 }
@@ -515,6 +525,12 @@ function mapProspectRow(
 
     unsubscribe_token:
       optionalString(row.unsubscribe_token, 200),
+
+    needs_product_decision:
+      row.needs_product_decision === true || row.needs_product_decision === "true",
+
+    candidate_product_names:
+      parseJsonObject<string[]>(row.candidate_product_names, []),
 
     created_at:
       String(row.created_at),
@@ -1597,4 +1613,69 @@ export async function findProspectsByLooseMatch(
   });
 
   return (result.rows as unknown as Array<Record<string, unknown>>).map(mapProspectRow);
+}
+
+/**
+ * MILESTONE 4R — marks a prospect as needing a manual product-reassignment
+ * decision, storing the AI's candidate suggestions for the UI to present.
+ */
+export async function markProspectNeedsProductDecision(
+  userId: string,
+  id: string,
+  candidateProductNames: string[]
+): Promise<void> {
+  const normalizedUserId = userId.trim();
+  const normalizedId = id.trim();
+  if (!normalizedUserId || !normalizedId) {
+    throw new Error("A user and prospect id are required.");
+  }
+
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `
+      UPDATE prospects
+      SET needs_product_decision = true,
+          candidate_product_names = @candidate_product_names,
+          updated_at = @updated_at
+      WHERE id = @id AND user_id = @user_id
+    `,
+    args: {
+      candidate_product_names: JSON.stringify(candidateProductNames.slice(0, MAX_EVIDENCE_ITEMS)),
+      updated_at: new Date().toISOString(),
+      id: normalizedId,
+      user_id: normalizedUserId,
+    },
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Prospect not found.");
+  }
+}
+
+/**
+ * MILESTONE 4R — resolves a pending product-reassignment decision:
+ * either reassigns to the chosen product (clearing the decision flag) or
+ * deletes the prospect outright, based on what Innocent picks in the UI.
+ */
+export async function resolveProductDecision(
+  userId: string,
+  id: string,
+  decision: { action: "reassign"; productId: string } | { action: "delete" }
+): Promise<void> {
+  if (decision.action === "delete") {
+    await deleteProspect(userId, id);
+    return;
+  }
+
+  await reassignProspectToProduct(userId, id, decision.productId);
+
+  const db = await getDb();
+  await db.execute({
+    sql: `
+      UPDATE prospects
+      SET needs_product_decision = false, candidate_product_names = NULL
+      WHERE id = @id AND user_id = @user_id
+    `,
+    args: { id: id.trim(), user_id: userId.trim() },
+  });
 }

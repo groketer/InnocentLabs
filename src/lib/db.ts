@@ -574,6 +574,17 @@ async function runMigrations(db: Db): Promise<void> {
     ["unsubscribe_token", "TEXT"],
   ]);
 
+  // MILESTONE 4R — the manual-decision fallback for product reassignment.
+  // When disqualifying a prospect, the AI check can now be genuinely
+  // uncertain between candidate products rather than forced into a
+  // binary "clearly fits one" vs "delete" — this stores its candidates
+  // for a person to decide from, instead of either guessing or losing
+  // a potentially valuable prospect to an overcautious auto-delete.
+  await addColumnsIfMissing("prospects", [
+    ["needs_product_decision", "BOOLEAN NOT NULL DEFAULT false"],
+    ["candidate_product_names", "TEXT"],
+  ]);
+
   /*
    * MILESTONE 3H — Duplicate prospects.
    *

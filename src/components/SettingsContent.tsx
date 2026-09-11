@@ -79,7 +79,7 @@ export function SettingsContent() {
 
   if (!settings || !infra) {
     return (
-      <div className="flex-1 overflow-y-auto px-6 py-6">
+      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         <h1 className="text-lg font-semibold text-white">Settings</h1>
         {error ? (
           <div className="mt-4 rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
@@ -93,7 +93,7 @@ export function SettingsContent() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-6">
+    <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
       <h1 className="text-lg font-semibold text-white">Settings</h1>
       <p className="mt-1 text-xs text-white/40">
         Sending pace and follow-up behavior for outreach campaigns.
@@ -104,6 +104,33 @@ export function SettingsContent() {
           {error}
         </div>
       )}
+
+      <div
+        className={`mt-6 rounded-md border p-5 ${
+          settings.agent_paused
+            ? "border-red-500/40 bg-red-500/10"
+            : "border-emerald-500/30 bg-emerald-500/5"
+        }`}
+      >
+        <label className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            checked={settings.agent_paused}
+            onChange={(e) =>
+              setSettings({ ...settings, agent_paused: e.target.checked })
+            }
+            className="h-5 w-5 rounded border-ink-600 bg-ink-800"
+          />
+          <span className="text-sm font-semibold text-white">
+            {settings.agent_paused ? "Agent is paused" : "Agent is running"}
+          </span>
+        </label>
+        <p className="mt-1 ml-8 text-xs text-white/40">
+          {settings.agent_paused
+            ? "All autonomous activity is stopped — no prospecting, campaigns, replies, or product study will run until you turn this back on. Manual actions (Send email now, Run outreach now) still work."
+            : "The agent is operating fully autonomously, within the settings below. Check this to pause everything at once."}
+        </p>
+      </div>
 
       <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">
         <h2 className="text-sm font-semibold text-white">Autonomy</h2>
@@ -245,6 +272,29 @@ export function SettingsContent() {
             </span>
           </label>
         )}
+
+        <label className="mt-3 flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={settings.autonomous_product_study}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                autonomous_product_study: e.target.checked,
+              })
+            }
+            className="h-4 w-4 rounded border-ink-600 bg-ink-800"
+          />
+          <span className="text-sm text-white/70">
+            Autonomous product study — periodically review each product&apos;s
+            knowledge, raising questions or suggestions on the dashboard
+          </span>
+        </label>
+        <p className="mt-1 ml-6 max-w-md text-xs text-white/30">
+          One product reviewed per day, rotating through the whole
+          portfolio over time. Most reviews find nothing worth flagging —
+          that&apos;s expected, not a sign it isn&apos;t working.
+        </p>
       </div>
 
       <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">

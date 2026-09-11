@@ -147,7 +147,7 @@ export function ChatWindow() {
 
   return (
     <div className="flex h-full flex-1 flex-col">
-      <div className="flex items-center justify-between border-b border-ink-700 px-6 py-4">
+      <div className="flex items-center justify-between border-b border-ink-700 px-4 py-4 sm:px-6">
         <div>
           <h1 className="text-lg font-semibold text-white">Intelligence</h1>
           <p className="text-xs text-white/40">
@@ -163,7 +163,7 @@ export function ChatWindow() {
         </button>
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-6 py-6">
+      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-6 sm:px-6">
         {messages.map((m, i) => (
           <div key={i} className="space-y-2">
             <MessageBubble message={m} />
@@ -195,7 +195,7 @@ export function ChatWindow() {
 
       <form
         onSubmit={handleSubmit}
-        className="flex items-end gap-3 border-t border-ink-700 px-6 py-4"
+        className="flex items-end gap-3 border-t border-ink-700 px-4 py-4 sm:px-6"
       >
         <textarea
           value={input}

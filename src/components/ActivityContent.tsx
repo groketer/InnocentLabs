@@ -113,7 +113,7 @@ export function ActivityContent() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-6">
+    <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
       <h1 className="text-lg font-semibold text-white">Activity</h1>
       <p className="mt-1 text-xs text-white/40">
         The chronological operational history of Innocent Intelligence.

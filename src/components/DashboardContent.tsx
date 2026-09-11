@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { AgentTask } from "@/lib/types";
 import { STATUS_META, formatProgress, formatTime } from "@/lib/format";
 import { GlobalSearch } from "./GlobalSearch";
+import { AgentQuestionsAndSuggestions } from "./AgentQuestionsAndSuggestions";
 
 interface DashboardAlert {
   severity: "critical" | "warning";
@@ -123,7 +124,7 @@ export function DashboardContent() {
   const recent = tasks?.filter((t) => t.id !== current?.id).slice(0, 10) ?? [];
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-6">
+    <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
       <h1 className="text-lg font-semibold text-white">Dashboard</h1>
       <p className="mt-1 text-xs text-white/40">
         Agent activity and current tasks across Innocent Labs.
@@ -162,7 +163,7 @@ export function DashboardContent() {
       )}
 
       {stats && (
-        <div className="mt-6 flex flex-wrap divide-x divide-ink-700 rounded-md border border-ink-700 bg-ink-900">
+        <div className="mt-6 grid grid-cols-2 divide-x divide-y divide-ink-700 rounded-md border border-ink-700 bg-ink-900 sm:grid-cols-3 lg:flex lg:divide-y-0">
           <StatBlock value={stats.active_tasks} label="Active tasks" />
           <StatBlock value={stats.completed_today} label="Completed today" />
           <StatBlock
@@ -185,13 +186,15 @@ export function DashboardContent() {
       )}
 
       {stats && (
-        <div className="mt-3 flex flex-wrap divide-x divide-ink-700 rounded-md border border-ink-700 bg-ink-900">
+        <div className="mt-3 grid grid-cols-2 divide-x divide-y divide-ink-700 rounded-md border border-ink-700 bg-ink-900 sm:flex sm:divide-y-0">
           <StatBlock value={stats.emails_sent_today} label="Emails sent today" />
           <StatBlock value={stats.emails_first_contact_today} label="First contact" />
           <StatBlock value={stats.emails_follow_up_today} label="Follow-ups" />
           <StatBlock value={stats.emails_replies_today} label="Replies" />
         </div>
       )}
+
+      <AgentQuestionsAndSuggestions />
 
       {usage && (
         <p className="mt-3 text-xs text-white/30">

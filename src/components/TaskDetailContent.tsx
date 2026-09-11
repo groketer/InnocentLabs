@@ -35,7 +35,7 @@ export function TaskDetailContent({ taskId }: { taskId: string }) {
 
   if (error) {
     return (
-      <div className="flex-1 px-6 py-6">
+      <div className="flex-1 px-4 py-6 sm:px-6">
         <div className="rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
         </div>
@@ -45,14 +45,14 @@ export function TaskDetailContent({ taskId }: { taskId: string }) {
 
   if (!task) {
     return (
-      <div className="flex-1 px-6 py-6 text-sm text-white/40">Loading…</div>
+      <div className="flex-1 px-4 py-6 text-sm text-white/40 sm:px-6">Loading…</div>
     );
   }
 
   const meta = STATUS_META[task.status];
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-6">
+    <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
       <div className={`flex items-center gap-2 text-sm font-medium ${meta.className}`}>
         <span>{meta.icon}</span>
         <span>{meta.label}</span>

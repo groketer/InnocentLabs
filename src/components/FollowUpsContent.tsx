@@ -138,7 +138,7 @@ export function FollowUpsContent() {
   }, [sequences, searchQuery]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-6 py-6">
+    <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-white">Follow-ups</h1>
@@ -176,7 +176,7 @@ export function FollowUpsContent() {
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         placeholder="Search name, organization, email…"
-        className="mt-3 w-64 rounded-full border border-ink-600 bg-ink-800 px-3 py-1 text-xs text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none"
+        className="mt-3 w-full rounded-full sm:w-64 border border-ink-600 bg-ink-800 px-3 py-1 text-xs text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none"
       />
 
       {notice && (

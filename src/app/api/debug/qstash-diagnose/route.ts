@@ -98,6 +98,8 @@ export async function POST(req: NextRequest) {
     result.sdkVerifyNote = "QSTASH_CURRENT_SIGNING_KEY not set in this environment.";
   }
 
+  console.log("[qstash-diagnose] Full result:", JSON.stringify(result, null, 2));
+
   return NextResponse.json(result);
 }
 

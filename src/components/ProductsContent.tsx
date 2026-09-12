@@ -31,6 +31,10 @@ export function ProductsContent() {
   const [newProduct, setNewProduct] = useState({ name: "", url: "", category: "", description: "" });
   const [addingProduct, setAddingProduct] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [focusProductIds, setFocusProductIds] = useState<string[]>([]);
+  const [focusExpiresAt, setFocusExpiresAt] = useState<string>("");
+  const [savedFocus, setSavedFocus] = useState<{ ids: string[]; expiresAt: string | null }>({ ids: [], expiresAt: null });
+  const [savingFocus, setSavingFocus] = useState(false);
 
   async function load() {
     try {
@@ -59,6 +63,16 @@ export function ProductsContent() {
 
   useEffect(() => {
     load();
+    fetch("/api/settings")
+      .then((res) => res.json())
+      .then((data) => {
+        const ids: string[] = data?.settings?.focus_product_ids ?? [];
+        const expiresAt: string | null = data?.settings?.focus_expires_at ?? null;
+        setSavedFocus({ ids, expiresAt });
+        setFocusProductIds(ids);
+        setFocusExpiresAt(expiresAt ? expiresAt.slice(0, 10) : "");
+      })
+      .catch(() => undefined);
   }, []);
 
   async function trigger(id: string, kind: "audit" | "prospect") {
@@ -176,11 +190,72 @@ export function ProductsContent() {
       if (!res.ok) throw new Error(data?.error || "Could not create product.");
       setNewProduct({ name: "", url: "", category: "", description: "" });
       setShowAddForm(false);
+      // A brand-new product launching directly into focus is the
+      // explicit use case behind "add a new one" for this feature —
+      // pre-select it automatically if there's room, so the person just
+      // clicks "Save Focus" rather than having to find and re-select
+      // the product they just created.
+      if (data.product?.id) {
+        setFocusProductIds((prev) => (prev.length < 3 ? [...prev, data.product.id] : prev));
+      }
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create product.");
     } finally {
       setAddingProduct(false);
+    }
+  }
+
+  function toggleFocusProduct(id: string) {
+    setFocusProductIds((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : prev.length < 3 ? [...prev, id] : prev
+    );
+  }
+
+  async function saveFocus() {
+    setSavingFocus(true);
+    setError(null);
+    try {
+      const expiresAtIso = focusExpiresAt ? new Date(focusExpiresAt).toISOString() : null;
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ focus_product_ids: focusProductIds, focus_expires_at: expiresAtIso }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not save focus.");
+      setSavedFocus({ ids: focusProductIds, expiresAt: expiresAtIso });
+      setNotice(
+        focusProductIds.length > 0
+          ? `Focus set on ${focusProductIds.length} product${focusProductIds.length === 1 ? "" : "s"} — new outreach elsewhere is paused; existing follow-ups continue as normal.`
+          : "Focus cleared — outreach has resumed normally across the full portfolio."
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save focus.");
+    } finally {
+      setSavingFocus(false);
+    }
+  }
+
+  async function clearFocus() {
+    setFocusProductIds([]);
+    setFocusExpiresAt("");
+    setSavingFocus(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ focus_product_ids: [], focus_expires_at: null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not clear focus.");
+      setSavedFocus({ ids: [], expiresAt: null });
+      setNotice("Focus cleared — outreach has resumed normally across the full portfolio.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not clear focus.");
+    } finally {
+      setSavingFocus(false);
     }
   }
 
@@ -341,6 +416,83 @@ export function ProductsContent() {
           </button>
         </div>
       )}
+
+      {/* MILESTONE 5V — Product(s) Focus. Select up to 3 products to
+          concentrate on: new prospecting and new outreach sequences
+          pause for everything else, while any follow-up already in
+          flight elsewhere continues untouched to completion. */}
+      <div className="mt-4 rounded-md border border-ink-700 bg-ink-900 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-white">Product Focus</h2>
+            <p className="mt-1 text-xs text-white/40">
+              Pick up to 3 products to concentrate on — new prospecting and new outreach pause for
+              everything else. Any follow-up already underway elsewhere keeps going until it&apos;s done.
+            </p>
+          </div>
+          {savedFocus.ids.length > 0 && (
+            <span className="shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
+              Active on {savedFocus.ids.length} product{savedFocus.ids.length === 1 ? "" : "s"}
+              {savedFocus.expiresAt ? ` until ${formatTimestamp(savedFocus.expiresAt)}` : ""}
+            </span>
+          )}
+        </div>
+
+        {products && products.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {products.map((p) => {
+              const selected = focusProductIds.includes(p.id);
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => toggleFocusProduct(p.id)}
+                  disabled={!selected && focusProductIds.length >= 3}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors disabled:opacity-30 ${
+                    selected
+                      ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                      : "border-ink-600 text-white/60 hover:text-white"
+                  }`}
+                >
+                  {p.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <p className="mt-2 text-[11px] text-white/30">
+          Launching something new? Use &quot;Add product&quot; above — a product you just created is
+          automatically added to this selection.
+        </p>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-xs text-white/50">
+            Optional auto-expiry
+            <input
+              type="date"
+              value={focusExpiresAt}
+              onChange={(e) => setFocusExpiresAt(e.target.value)}
+              className="rounded-md border border-ink-600 bg-ink-800 px-2 py-1 text-xs text-white"
+            />
+          </label>
+          <button
+            disabled={savingFocus || focusProductIds.length === 0}
+            onClick={saveFocus}
+            className="rounded-md bg-emerald-500 px-4 py-2 text-xs font-medium text-ink-950 disabled:opacity-50"
+          >
+            {savingFocus ? "Saving…" : "Save Focus"}
+          </button>
+          {savedFocus.ids.length > 0 && (
+            <button
+              disabled={savingFocus}
+              onClick={clearFocus}
+              className="rounded-md border border-ink-600 px-4 py-2 text-xs text-white/60 transition-colors hover:border-red-500/40 hover:text-red-300 disabled:opacity-50"
+            >
+              Clear Focus
+            </button>
+          )}
+        </div>
+      </div>
 
       {notice && (
         <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">

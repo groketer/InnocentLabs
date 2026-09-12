@@ -242,11 +242,27 @@ export const emailCampaignExecutor: TaskExecutor = {
       !settings.require_manual_approval
     );
 
+    // MILESTONE 5V — Product(s) Focus: when active, a prospect who
+    // hasn't been contacted yet (not_started) is exactly "new work" —
+    // paused for anything outside the focus list. A prospect already
+    // active mid-sequence is exactly the "current follow-ups continue
+    // until completion" case from the actual request, and is
+    // deliberately let through here regardless of which product it's
+    // for — this filter must never touch that case.
+    const focusFiltered =
+      settings.focus_product_ids.length > 0
+        ? candidates.filter(
+            (p) =>
+              p.sequence_status !== "not_started" ||
+              (p.product_id && settings.focus_product_ids.includes(p.product_id))
+          )
+        : candidates;
+
     // MILESTONE 3R — international-timezone-aware sending. A prospect
     // with no known country falls back to "always eligible" (see
     // isBusinessHoursFor) rather than being permanently blocked by a
     // safeguard that has nothing to check against.
-    const due = candidates
+    const due = focusFiltered
       .filter((p) => isBusinessHoursFor(p.country))
       .slice(0, batchSize);
 

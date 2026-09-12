@@ -54,7 +54,7 @@ import { randomUUID } from "crypto";
 import { logActivity } from "@/lib/models/activity";
 import { getDb } from "@/lib/db";
 import { getExecutor } from "./registry";
-import { getSettings } from "@/lib/models/settings";
+import { getSettings, updateSettings } from "@/lib/models/settings";
 import { autoQualifyDueProspects } from "@/lib/models/prospects";
 import { LOCAL_USER_ID } from "@/lib/localUser";
 import type { AgentTask } from "@/lib/types";
@@ -689,6 +689,28 @@ export async function getLastTickInfo(): Promise<{ lastTickAt: string | null; se
   return { lastTickAt: value, secondsAgo };
 }
 
+/**
+ * MILESTONE 5V — Product(s) Focus's optional auto-expiry. Confirmed
+ * design: manual on/off by default, with an OPTIONAL expiry date a
+ * person can set instead of remembering to turn it off themselves.
+ * Checked every tick, same pattern as the other ensureDaily* scheduler
+ * checks — cheap to call when nothing is due, so safe to check this
+ * often rather than gating it behind a slower, once-daily cadence.
+ */
+async function expireFocusIfDue(): Promise<void> {
+  const settings = await getSettings();
+  if (!settings.focus_expires_at) return;
+  if (new Date(settings.focus_expires_at).getTime() > Date.now()) return;
+
+  await updateSettings({ focus_product_ids: [], focus_expires_at: null });
+  await logActivity({
+    user_id: LOCAL_USER_ID,
+    task_id: null,
+    event_type: "TASK_COMPLETED",
+    message: "Product Focus expired automatically — outreach has resumed normally across the full portfolio.",
+  });
+}
+
 export async function tick(): Promise<void> {
   // MILESTONE 5N — tracks how long this tick has been running, so the
   // task loop below can stop gracefully before hitting the route's
@@ -743,6 +765,7 @@ export async function tick(): Promise<void> {
     await ensureDailyAuditTask();
     await ensureDailyDeepQualificationTask();
     await ensureDailyProductStudyTask();
+    await expireFocusIfDue();
   } catch (error) {
     console.error("[engine] A scheduler check failed (contained, tick continues):", error);
   }

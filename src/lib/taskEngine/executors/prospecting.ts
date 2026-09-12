@@ -85,6 +85,7 @@ import type { StepResult, SubtaskPlanItem, TaskExecutor } from "../types";
 import { getDb } from "@/lib/db";
 import { recordApiUsage } from "@/lib/models/apiUsage";
 import { LOCAL_USER_ID } from "@/lib/localUser";
+import { getSettings } from "@/lib/models/settings";
 import { extractAndParseJson } from "@/lib/extractAndParseJson";
 
 import {
@@ -714,10 +715,27 @@ async function extractRequestedProductHint(
  * market" — only real, individual portfolio products are eligible.
  */
 async function autoSelectProductForProspecting(): Promise<string | null> {
-  const products = await listProductsWithUrl();
+  let products = await listProductsWithUrl();
 
   if (products.length === 0) {
     return null;
+  }
+
+  // MILESTONE 5V — Product(s) Focus: when active, new prospecting is
+  // restricted to the focused product(s) only — this is the "pause new
+  // work on everything else" half of the feature. Already-running
+  // sequences are untouched by this; this function only ever decides
+  // where to look for NEW prospects.
+  const settings = await getSettings();
+  if (settings.focus_product_ids.length > 0) {
+    const focusedSet = new Set(settings.focus_product_ids);
+    const focused = products.filter((p) => focusedSet.has(p.id));
+    // If every focused product was deleted or renamed since focus was
+    // set, fall through to normal (unfiltered) selection rather than
+    // silently prospecting for nothing at all.
+    if (focused.length > 0) {
+      products = focused;
+    }
   }
 
   const db = await getDb();
@@ -2901,7 +2919,18 @@ Do not return explanatory prose outside the JSON object.
           existing.push(
             prospect
           );
-        } catch {
+        } catch (error) {
+          // MILESTONE 5T — this used to silently swallow the actual
+          // error from createProspect(), surfacing only the generic
+          // "Prospecting produced candidates, but none could be
+          // persisted" at the task level with zero indication of why —
+          // the exact same pattern as the JSON-parsing failures fixed
+          // earlier this session, where the real, checkable reason was
+          // one log line away the whole time.
+          console.error(
+            `[prospecting] createProspect() failed for candidate "${candidate.name}":`,
+            error
+          );
           rejected.push(
             candidate.name
           );

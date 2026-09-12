@@ -64,6 +64,21 @@ export interface AppSettings {
    * working with incomplete information indefinitely.
    */
   autonomous_product_study: boolean;
+
+  /**
+   * MILESTONE 5V — Product(s) Focus.
+   *
+   * When non-empty (1-3 product IDs), no NEW prospecting research and no
+   * NEW outreach sequences are started for any product not in this list
+   * — but any sequence already in flight for a non-focused product
+   * continues completely untouched to completion, per the actual
+   * request: pause new work on everything else, never abandon someone
+   * mid-conversation. Focused products themselves are entirely
+   * unaffected — this only ever restricts, never accelerates.
+   */
+  focus_product_ids: string[];
+  /** Optional — if set, focus automatically clears itself once this passes. Null means manual-only, stays on until explicitly turned off. */
+  focus_expires_at: string | null;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -79,6 +94,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   max_autonomous_replies_per_conversation: 15,
   agent_paused: false,
   autonomous_product_study: true,
+  focus_product_ids: [],
+  focus_expires_at: null,
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<
@@ -95,9 +112,27 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
   "autonomous_product_study",
 ]);
 
-function coerce(key: keyof AppSettings, raw: string): number | boolean {
+// MILESTONE 5V — focus_product_ids (an array) and focus_expires_at (a
+// nullable timestamp string) don't fit the existing number/boolean
+// coercion below at all — handled as their own category rather than
+// forcing them through logic built for scalar values.
+const JSON_ARRAY_KEYS = new Set<keyof AppSettings>(["focus_product_ids"]);
+const NULLABLE_STRING_KEYS = new Set<keyof AppSettings>(["focus_expires_at"]);
+
+function coerce(key: keyof AppSettings, raw: string): number | boolean | string[] | string | null {
   if (BOOLEAN_KEYS.has(key)) {
     return raw === "true";
+  }
+  if (JSON_ARRAY_KEYS.has(key)) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+  if (NULLABLE_STRING_KEYS.has(key)) {
+    return raw || null;
   }
   const n = Number(raw);
   return Number.isFinite(n) ? n : (DEFAULT_SETTINGS[key] as number);
@@ -144,6 +179,8 @@ export interface UpdateSettingsInput {
   max_autonomous_replies_per_conversation?: number;
   agent_paused?: boolean;
   autonomous_product_study?: boolean;
+  focus_product_ids?: string[];
+  focus_expires_at?: string | null;
 }
 
 function validate(input: UpdateSettingsInput): void {
@@ -199,6 +236,23 @@ function validate(input: UpdateSettingsInput): void {
       "max_autonomous_replies_per_conversation must be a whole number between 1 and 100."
     );
   }
+
+  if (
+    input.focus_product_ids !== undefined &&
+    (!Array.isArray(input.focus_product_ids) ||
+      input.focus_product_ids.length > 3 ||
+      !input.focus_product_ids.every((id) => typeof id === "string" && id.trim()))
+  ) {
+    throw new Error("focus_product_ids must be an array of 0 to 3 non-empty product IDs.");
+  }
+
+  if (
+    input.focus_expires_at !== undefined &&
+    input.focus_expires_at !== null &&
+    Number.isNaN(new Date(input.focus_expires_at).getTime())
+  ) {
+    throw new Error("focus_expires_at must be a valid date or null.");
+  }
 }
 
 export async function updateSettings(
@@ -209,9 +263,24 @@ export async function updateSettings(
   const db = await getDb();
   const entries = Object.entries(input).filter(
     ([, v]) => v !== undefined
-  ) as Array<[keyof AppSettings, number | boolean]>;
+  ) as Array<[keyof AppSettings, number | boolean | string[] | string | null]>;
 
   for (const [key, value] of entries) {
+    // MILESTONE 5V — String(["a","b"]) produces the comma-joined "a,b",
+    // not JSON — silently incompatible with the JSON.parse() in
+    // coerce() above. String(null) produces the literal text "null",
+    // which coerce()'s `raw || null` would treat as a truthy non-empty
+    // string, not the null it actually means. Both need explicit
+    // handling rather than the generic String() conversion below.
+    let serialized: string;
+    if (Array.isArray(value)) {
+      serialized = JSON.stringify(value);
+    } else if (value === null) {
+      serialized = "";
+    } else {
+      serialized = String(value);
+    }
+
     await db.execute({
       sql: `
         INSERT INTO app_meta (key, value)
@@ -220,7 +289,7 @@ export async function updateSettings(
       `,
       args: {
         key: `setting:${key}`,
-        value: String(value),
+        value: serialized,
       },
     });
   }

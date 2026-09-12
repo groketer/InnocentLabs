@@ -240,12 +240,25 @@ export async function sendEmail(
   // behavior if unset, rather than sending with no Reply-To at all.
   const replyTo = process.env.REPLY_TO_ADDRESS?.trim() || process.env.SMTP_USER;
 
+  // MILESTONE 5J — bounce notifications from a recipient's mail server
+  // are machine-generated: they go to the SMTP ENVELOPE sender, not the
+  // Reply-To header, so the Reply-To fix above never touched this at
+  // all — bounces kept landing at the raw SMTP mailbox nobody's
+  // watching, invisible to the app. nodemailer's envelope.from
+  // overrides just the bounce-return-path without changing the visible
+  // "From" a prospect sees, reusing the same webhook-monitored address
+  // Reply-To already points to.
+  const envelopeFrom = replyTo || process.env.SMTP_USER;
+
   try {
     const info = await getTransporter().sendMail({
       from: `"${fromName}" <${process.env.SMTP_USER}>`,
       to: input.to,
       ...(bcc.length > 0 ? { bcc } : {}),
       ...(replyTo ? { replyTo } : {}),
+      ...(envelopeFrom
+        ? { envelope: { from: envelopeFrom, to: input.to } }
+        : {}),
       subject: input.subject,
       text: finalBody,
       ...(input.inReplyTo

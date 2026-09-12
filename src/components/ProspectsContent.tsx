@@ -122,6 +122,27 @@ export function ProspectsContent() {
       .catch(() => setProducts([]));
   }, []);
 
+  async function changeProduct(id: string, productId: string) {
+    if (!productId) return;
+    setSendingNowId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/prospects/${id}/reassign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not change product.");
+      setNotice(`${data.prospect?.name ?? "Prospect"} reassigned.`);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not change product.");
+    } finally {
+      setSendingNowId(null);
+    }
+  }
+
   async function resolveDecision(id: string, action: { type: "delete" } | { type: "reassign"; productId: string }) {
     setSendingNowId(id); // reuse as a general "busy" indicator for this row
     setError(null);
@@ -469,13 +490,36 @@ export function ProspectsContent() {
                 <p className="mt-2 text-sm text-white/70">{p.fit_reason}</p>
               )}
 
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/40">
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/40">
                 {p.email ? (
                   <span className="text-white/60">{p.email}</span>
                 ) : (
                   <span>No public email found</span>
                 )}
-                {p.product_name && <span>For {p.product_name}</span>}
+                {/* MILESTONE 5K — a general, always-available way to
+                    change which product a prospect is assigned to —
+                    not tied to needs_product_decision, since a
+                    prospect can end up needing this for many reasons
+                    (e.g. the productless-prospects cleanup), not just
+                    the AI's "not a fit" check. */}
+                <label className="flex items-center gap-1">
+                  <span>For</span>
+                  <select
+                    value={p.product_id ?? ""}
+                    onChange={(e) => changeProduct(p.id, e.target.value)}
+                    disabled={sendingNowId === p.id}
+                    className="rounded-md border border-ink-600 bg-ink-800 px-1.5 py-0.5 text-xs text-white/70"
+                  >
+                    <option value="" disabled>
+                      Choose a product…
+                    </option>
+                    {products.map((prod) => (
+                      <option key={prod.id} value={prod.id}>
+                        {prod.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 {typeof p.confidence === "number" && (
                   <span>{Math.round(p.confidence * 100)}% confidence</span>
                 )}

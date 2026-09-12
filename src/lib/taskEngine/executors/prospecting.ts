@@ -85,6 +85,7 @@ import type { StepResult, SubtaskPlanItem, TaskExecutor } from "../types";
 import { getDb } from "@/lib/db";
 import { recordApiUsage } from "@/lib/models/apiUsage";
 import { LOCAL_USER_ID } from "@/lib/localUser";
+import { extractAndParseJson } from "@/lib/extractAndParseJson";
 
 import {
   getProductByName,
@@ -1059,10 +1060,10 @@ JSON object.
     const raw =
       result.finalOutput;
 
-    const jsonText =
-      extractJsonText(raw);
+    const parsedJsonOrUndefined =
+      extractJsonValue(raw);
 
-    if (!jsonText) {
+    if (parsedJsonOrUndefined === undefined) {
       return {
         discovered: [],
         skipped: [],
@@ -1071,19 +1072,7 @@ JSON object.
       };
     }
 
-    let parsedJson: unknown;
-
-    try {
-      parsedJson =
-        JSON.parse(jsonText);
-    } catch {
-      return {
-        discovered: [],
-        skipped: [],
-        error:
-          "Live marketplace refresh returned malformed JSON.",
-      };
-    }
+    const parsedJson: unknown = parsedJsonOrUndefined;
 
     const validation =
       LivePortfolioRefreshSchema.safeParse(
@@ -1826,13 +1815,13 @@ Return only the prospects that survive this standard.
  * The model is instructed to return JSON only, but hosted web research can
  * occasionally result in Markdown fences or surrounding text.
  */
-function extractJsonText(
+function extractJsonValue(
   value: unknown
-): string | null {
+): unknown {
   if (
     typeof value !== "string"
   ) {
-    return null;
+    return undefined;
   }
 
   const cleaned =
@@ -1844,82 +1833,37 @@ function extractJsonText(
       .trim();
 
   if (!cleaned) {
-    return null;
+    return undefined;
   }
 
+  // MILESTONE 5B — consolidated onto the shared extractAndParseJson
+  // helper, which does the same object-boundary extraction this used to
+  // do inline, plus handles a top-level array (this never did) and
+  // leading/trailing commentary around either shape. Returns the
+  // actually-parsed value directly rather than round-tripping back to a
+  // string the caller re-parses — the previous version of this fix did
+  // exactly that and would have silently kept failing on any input with
+  // real commentary around the JSON, since it returned the ORIGINAL
+  // (still-commentary-wrapped) string on success rather than the
+  // extracted substring.
   try {
-    JSON.parse(cleaned);
-
-    return cleaned;
+    return extractAndParseJson(cleaned);
   } catch {
-    // Continue.
-  }
-
-  const unfenced =
-    cleaned
-      .replace(
-        /^```(?:json)?\s*/i,
-        ""
-      )
-      .replace(
-        /\s*```$/i,
-        ""
-      )
-      .trim();
-
-  try {
-    JSON.parse(unfenced);
-
-    return unfenced;
-  } catch {
-    // Continue.
-  }
-
-  const firstBrace =
-    unfenced.indexOf("{");
-
-  const lastBrace =
-    unfenced.lastIndexOf("}");
-
-  if (
-    firstBrace === -1 ||
-    lastBrace === -1 ||
-    lastBrace <= firstBrace
-  ) {
-    return null;
-  }
-
-  const candidate =
-    unfenced
-      .slice(
-        firstBrace,
-        lastBrace + 1
-      )
-      .trim();
-
-  try {
-    JSON.parse(candidate);
-
-    return candidate;
-  } catch {
-    return null;
+    return undefined;
   }
 }
 
 function parseProspectingOutput(
   value: unknown
 ): ProspectingOutput | null {
-  const jsonText =
-    extractJsonText(value);
+  const parsed =
+    extractJsonValue(value);
 
-  if (!jsonText) {
+  if (parsed === undefined) {
     return null;
   }
 
   try {
-    const parsed: unknown =
-      JSON.parse(jsonText);
-
     const validation =
       ProspectingOutputSchema.safeParse(
         parsed

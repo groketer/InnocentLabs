@@ -22,6 +22,7 @@ import type { Product } from "@/lib/types";
 import type { EmailSend } from "@/lib/models/emailSends";
 import { recordApiUsage } from "@/lib/models/apiUsage";
 import { LOCAL_USER_ID } from "@/lib/localUser";
+import { extractAndParseJson } from "@/lib/extractAndParseJson";
 
 const MODEL = "gpt-4.1-mini";
 
@@ -187,12 +188,9 @@ function buildUserPrompt(input: ComposeReplyInput): string {
 }
 
 function parseResult(raw: string): ComposeReplyResult {
-  let cleaned = raw.trim();
-  cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
-
   let parsed: unknown;
   try {
-    parsed = JSON.parse(cleaned);
+    parsed = extractAndParseJson(raw);
   } catch {
     throw new Error("Reply composer returned non-JSON output.");
   }

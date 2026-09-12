@@ -73,6 +73,19 @@ export async function POST(req: NextRequest) {
     if (!body?.email || typeof body.email !== "string") {
       return NextResponse.json({ error: "An email is required." }, { status: 400 });
     }
+    if (!body?.product_id || typeof body.product_id !== "string") {
+      // MILESTONE 5B — a real, confirmed bug this prevents: a prospect
+      // with no product can never be meaningfully outreached to. Once
+      // marked qualified, composeAndSendOutreachEmail() correctly fails
+      // with "Missing product_id" — but that failure happens BEFORE
+      // sequence_status ever advances, so the same prospect matches
+      // listProspectsDueForOutreach() again the very next day, and every
+      // day after that, forever. This was directly responsible for a
+      // large share of "most campaigns are failing" — not one bad send,
+      // but the same doomed prospect retried daily with no way to stop
+      // short of a person noticing and manually fixing it.
+      return NextResponse.json({ error: "A product is required." }, { status: 400 });
+    }
 
     const prospect = await createProspect({
       user_id: LOCAL_USER_ID,

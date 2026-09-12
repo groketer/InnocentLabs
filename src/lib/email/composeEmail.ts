@@ -35,6 +35,7 @@ import type { EmailSend } from "@/lib/models/emailSends";
 import { recordApiUsage } from "@/lib/models/apiUsage";
 import { LOCAL_USER_ID } from "@/lib/localUser";
 import { searchProductKnowledge } from "@/lib/models/productDocuments";
+import { extractAndParseJson } from "@/lib/extractAndParseJson";
 
 const MODEL = "gpt-4.1-mini";
 const MAX_TURNS = 4;
@@ -233,12 +234,9 @@ function buildUserPrompt(input: ComposeEmailInput): string {
 }
 
 function parseComposedEmail(raw: string): ComposeEmailResult {
-  let cleaned = raw.trim();
-  cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
-
   let parsed: unknown;
   try {
-    parsed = JSON.parse(cleaned);
+    parsed = extractAndParseJson(raw);
   } catch {
     throw new Error("Email composer returned non-JSON output.");
   }

@@ -69,6 +69,17 @@ export async function composeAndSendOutreachEmail(
   }
 
   if (!prospect.product_id) {
+    // MILESTONE 5B — without this, the prospect's sequence_status never
+    // advances past "not_started", so it matches
+    // listProspectsDueForOutreach() again tomorrow, and every day after
+    // — the same doomed send retried forever rather than surfacing once
+    // as something a person can actually fix (assign a product, or
+    // delete). needs_human_reply is a real, already-monitored status —
+    // it shows up in the Dashboard's alerts as something needing
+    // attention, rather than silently repeating in the background.
+    await updateProspectSequence(userId, prospect.id, {
+      sequence_status: "needs_human_reply",
+    });
     return {
       success: false,
       summary: "This prospect has no associated product to write about.",
@@ -80,6 +91,12 @@ export async function composeAndSendOutreachEmail(
   const product = await getProductById(prospect.product_id);
 
   if (!product) {
+    // MILESTONE 5B — same class of bug as the missing product_id case
+    // just above: a product_id pointing at a deleted or nonexistent
+    // product would otherwise retry forever too, for the same reason.
+    await updateProspectSequence(userId, prospect.id, {
+      sequence_status: "needs_human_reply",
+    });
     return {
       success: false,
       summary: "The associated product could not be found.",

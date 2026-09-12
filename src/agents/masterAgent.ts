@@ -37,6 +37,7 @@ import { reassignProspectToProductTool } from "./tools/reassignProspectToProduct
 import { getSettingsTool } from "./tools/getSettingsTool";
 import { listProductsTool } from "./tools/listProductsTool";
 import { getActivitySummaryTool } from "./tools/getActivitySummaryTool";
+import { getTaskStatusTool } from "./tools/getTaskStatusTool";
 import { getUsageSummaryTool } from "./tools/getUsageSummaryTool";
 import { getProductInsightsTool } from "./tools/getProductInsightsTool";
 import { searchProductDocumentsTool } from "./tools/searchProductDocumentsTool";
@@ -573,6 +574,7 @@ tools: [
   getSettingsTool,
   listProductsTool,
   getActivitySummaryTool,
+  getTaskStatusTool,
   getUsageSummaryTool,
   getProductInsightsTool,
   searchProductDocumentsTool,

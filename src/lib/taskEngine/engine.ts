@@ -721,6 +721,13 @@ export async function getLastTickInfo(): Promise<{ lastTickAt: string | null; se
 }
 
 export async function tick(): Promise<void> {
+  // MILESTONE 5N — tracks how long this tick has been running, so the
+  // task loop below can stop gracefully before hitting the route's
+  // maxDuration (60s) rather than risking Vercel killing the function
+  // mid-operation, which would leave a task's status stuck mid-write
+  // until the next cold-start recovery cycle picks it up.
+  const tickStartedAt = Date.now();
+
   // MILESTONE 3Z-2 — a real bug this fixes, found by direct root-cause
   // investigation, not guessing: this used to be fire-and-forget
   // (called without awaiting), which is unsafe on Vercel specifically —
@@ -774,7 +781,26 @@ export async function tick(): Promise<void> {
 
   const tasks = await listActiveTopLevelTasks();
 
+  // MILESTONE 5N — the actual fix for a confirmed real bug: this loop
+  // used to run through every active top-level task with no awareness
+  // of the route's 60s maxDuration — Vercel would kill the function mid
+  // loop once a backlog of active tasks (each doing real, slow
+  // AI/web-search work) ran long enough, silently leaving remaining
+  // tasks untouched that tick with no graceful stopping point. Combined
+  // with the fair-rotation ordering fix above, stopping gracefully here
+  // means whatever didn't get a turn this tick is exactly what
+  // last_activity_at ASC prioritizes on the very next one, rather than
+  // this same backlog being reprocessed identically forever.
+  const TICK_TIME_BUDGET_MS = 50_000; // stay under the 60s maxDuration with margin
+
   for (const task of tasks) {
+    if (Date.now() - tickStartedAt > TICK_TIME_BUDGET_MS) {
+      console.log(
+        `[engine] Tick time budget reached — stopping gracefully with ${tasks.length} active tasks total, some deferred to the next tick.`
+      );
+      break;
+    }
+
     try {
       if (task.status === "QUEUED") {
         await startTask(task);

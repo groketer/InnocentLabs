@@ -212,11 +212,25 @@ export async function listTasks(options: ListTasksOptions): Promise<AgentTask[]>
 export async function listActiveTopLevelTasks(): Promise<AgentTask[]> {
   const db = await getDb();
 
+  // MILESTONE 5N — a real, confirmed bug this fixes: ordering strictly
+  // by created_at ASC meant the same oldest active tasks always got
+  // processed first, every single tick — with no time-budget awareness
+  // in the loop that consumes this list (see tick() in engine.ts), a
+  // backlog of several active tasks each doing real, slow AI/web-search
+  // work could consume the whole 60s function budget before ever
+  // reaching a newer task. Confirmed directly: several real "Autonomous
+  // prospecting run" tasks took 7-9+ hours wall-clock to finish despite
+  // each individual step being fast — because they were stuck behind
+  // older tasks in this same ordering, tick after tick. Ordering by
+  // last_activity_at instead (nulls — i.e. never yet touched — sort
+  // first) means whichever active tasks haven't had a turn recently get
+  // priority next tick, naturally rotating fairly through the whole
+  // active set over time instead of always favoring the same few.
   const result = await db.execute(
     `SELECT * FROM agent_tasks
      WHERE parent_task_id IS NULL
      AND status IN ('QUEUED', 'RUNNING')
-     ORDER BY created_at ASC`
+     ORDER BY last_activity_at ASC NULLS FIRST`
   );
 
   return result.rows as unknown as AgentTask[];

@@ -1544,6 +1544,16 @@ export async function deleteProspect(userId: string, id: string): Promise<void> 
  * actually been evaluated against the NEW product yet — carrying over
  * "qualified" or "unqualified" from the old product would be
  * misleading. fit_reason is cleared for the same reason.
+ *
+ * MILESTONE 5P — a real, confirmed bug this fixes: sequence_status
+ * wasn't being reset here at all. A prospect stuck at needs_product (or
+ * bounced, or any other terminal state) that got correctly reassigned
+ * to a real product would stay showing that exact same stuck status
+ * forever afterward — confirmed directly: product_id updated, but
+ * sequence_status stayed "needs_product" with no way to ever change.
+ * Resetting to not_started here means a reassigned prospect is treated
+ * as a genuinely fresh start for the new product, consistent with the
+ * qualification reset just above it.
  */
 export async function reassignProspectToProduct(
   userId: string,
@@ -1560,7 +1570,8 @@ export async function reassignProspectToProduct(
   const result = await db.execute({
     sql: `
       UPDATE prospects
-      SET product_id = @product_id, qualification_status = 'needs_review', fit_reason = NULL, updated_at = @updated_at
+      SET product_id = @product_id, qualification_status = 'needs_review', fit_reason = NULL,
+          sequence_status = 'not_started', updated_at = @updated_at
       WHERE id = @id AND user_id = @user_id
     `,
     args: {

@@ -46,6 +46,41 @@ export function FollowUpsContent() {
   const [conversation, setConversation] = useState<ConversationItem[] | null>(null);
   const [conversationError, setConversationError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [products, setProducts] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/products")
+      .then((res) => res.json())
+      .then((data) => setProducts(data.products ?? []))
+      .catch(() => setProducts([]));
+  }, []);
+
+  async function resolveDecision(id: string, action: { type: "delete" } | { type: "reassign"; productId: string }) {
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await fetch(`/api/prospects/${id}/resolve-product-decision`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          action.type === "delete" ? { action: "delete" } : { action: "reassign", productId: action.productId }
+        ),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not update this prospect.");
+      setNotice(
+        action.type === "delete"
+          ? `${data.name ?? "Prospect"} deleted.`
+          : `${data.prospect?.name ?? "Prospect"} reassigned.`
+      );
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update this prospect.");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function load() {
     try {
@@ -130,13 +165,16 @@ export function FollowUpsContent() {
   const filteredSequences = useMemo(() => {
     if (!sequences) return sequences;
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return sequences;
-    return sequences.filter((s) =>
-      [s.name, s.organization, s.email]
-        .filter(Boolean)
-        .some((field) => field!.toLowerCase().includes(q))
-    );
-  }, [sequences, searchQuery]);
+    return sequences.filter((s) => {
+      const matchesStatus = !statusFilter || s.sequence_status === statusFilter;
+      const matchesSearch =
+        !q ||
+        [s.name, s.organization, s.email]
+          .filter(Boolean)
+          .some((field) => field!.toLowerCase().includes(q));
+      return matchesStatus && matchesSearch;
+    });
+  }, [sequences, searchQuery, statusFilter]);
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
@@ -172,13 +210,32 @@ export function FollowUpsContent() {
         qualifying someone new.
       </p>
 
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="Search name, organization, email…"
-        className="mt-3 w-full rounded-full sm:w-64 border border-ink-600 bg-ink-800 px-3 py-1 text-xs text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none"
-      />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search name, organization, email…"
+          className="w-full rounded-full sm:w-64 border border-ink-600 bg-ink-800 px-3 py-1 text-xs text-white placeholder:text-white/30 focus:border-emerald-500/50 focus:outline-none"
+        />
+        {/* MILESTONE 5P — a direct, practical need: after the
+            needs_product/needs_human_reply status split, there was no
+            way to isolate "just the ones needing a product assigned"
+            (or any other specific status) from everything else on this
+            page — only a name/org/email text search existed. */}
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded-full border border-ink-600 bg-ink-800 px-3 py-1 text-xs text-white"
+        >
+          <option value="">All statuses</option>
+          {Object.entries(STATUS_META).map(([value, meta]) => (
+            <option key={value} value={value}>
+              {meta.label}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {notice && (
         <div className="mt-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
@@ -293,6 +350,40 @@ export function FollowUpsContent() {
                   >
                     Mark handled — I replied personally
                   </button>
+                )}
+                {/* MILESTONE 5P — the direct fix for a real, practical
+                    need: resolving a needs_product prospect (assign the
+                    right product, or delete) had no path from this page
+                    at all — only from Prospects, and only via a search
+                    that a productless prospect wouldn't even surface in
+                    product-filtered results. */}
+                {s.sequence_status === "needs_product" && (
+                  <>
+                    <select
+                      defaultValue=""
+                      disabled={busyId === s.id}
+                      onChange={(e) => {
+                        if (e.target.value) resolveDecision(s.id, { type: "reassign", productId: e.target.value });
+                      }}
+                      className="rounded-md border border-amber-500/40 bg-ink-800 px-2 py-1 text-xs text-amber-300"
+                    >
+                      <option value="" disabled>
+                        Assign a product…
+                      </option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      disabled={busyId === s.id}
+                      onClick={() => resolveDecision(s.id, { type: "delete" })}
+                      className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-red-500/40 hover:text-red-300 disabled:opacity-40"
+                    >
+                      Delete
+                    </button>
+                  </>
                 )}
                 {s.emails_sent > 0 && (
                   <button

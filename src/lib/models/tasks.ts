@@ -237,6 +237,26 @@ export async function listActiveTopLevelTasks(): Promise<AgentTask[]> {
 }
 
 /**
+ * MILESTONE 5Q — deletes a task and all of its subtasks outright.
+ * Subtasks first, then the parent — agent_tasks has no ON DELETE CASCADE
+ * on parent_task_id, so an orphaned subtask would otherwise survive its
+ * own parent's deletion. Both deletes are scoped to user_id, matching
+ * every other mutation in this file, so this can never touch a task
+ * belonging to someone else.
+ */
+export async function deleteTaskAndSubtasks(id: string, userId: string): Promise<void> {
+  const db = await getDb();
+  await db.execute({
+    sql: `DELETE FROM agent_tasks WHERE parent_task_id = @id AND user_id = @user_id`,
+    args: { id, user_id: userId },
+  });
+  await db.execute({
+    sql: `DELETE FROM agent_tasks WHERE id = @id AND user_id = @user_id`,
+    args: { id, user_id: userId },
+  });
+}
+
+/**
  * Updates an existing task after validating the requested transition and
  * the fields being written.
  *

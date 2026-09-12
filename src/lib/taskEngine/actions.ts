@@ -15,6 +15,7 @@ import {
   getTaskById,
   listSubtasks,
   updateTask,
+  deleteTaskAndSubtasks,
 } from "@/lib/models/tasks";
 import { logActivity } from "@/lib/models/activity";
 import type { AgentTask } from "@/lib/types";
@@ -218,4 +219,34 @@ export async function cancelTask(id: string, userId: string): Promise<AgentTask>
   });
 
   return updated;
+}
+
+/**
+ * MILESTONE 5Q — deletes a task and its subtasks outright. Restricted
+ * to CANCELLED tasks specifically, per the actual request: a task that
+ * was deliberately called off is genuinely done and safe to remove.
+ * Anything still QUEUED/RUNNING must be cancelled first — deleting an
+ * active task out from under itself (rather than cancelling it) risks
+ * a subtask update writing to a row that no longer exists partway
+ * through. COMPLETED/FAILED tasks are left alone here too, since those
+ * are real historical records someone may still want, not something to
+ * offer blanket deletion for.
+ */
+export async function deleteTask(id: string, userId: string): Promise<void> {
+  const task = await requireOwnedTask(id, userId);
+
+  if (task.status !== "CANCELLED") {
+    throw new TaskActionError(
+      `Only a cancelled task can be deleted (this one is ${task.status}).`
+    );
+  }
+
+  await deleteTaskAndSubtasks(id, userId);
+
+  await logActivity({
+    user_id: userId,
+    task_id: null,
+    event_type: "TASK_CANCELLED",
+    message: `${task.title}: deleted.`,
+  });
 }

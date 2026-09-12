@@ -49,6 +49,11 @@ export function TaskActions({ task, onChanged }: Props) {
       label: "Cancel",
       show: !["COMPLETED", "FAILED", "CANCELLED"].includes(task.status),
     },
+    {
+      action: "delete",
+      label: "Delete",
+      show: task.status === "CANCELLED",
+    },
   ];
 
   const visible = buttons.filter((b) => b.show);
@@ -59,9 +64,18 @@ export function TaskActions({ task, onChanged }: Props) {
       {visible.map((b) => (
         <button
           key={b.action}
-          onClick={() => handle(b.action)}
+          onClick={() => {
+            if (b.action === "delete" && !window.confirm(`Delete "${task.title}"? This can't be undone.`)) {
+              return;
+            }
+            handle(b.action);
+          }}
           disabled={busy !== null}
-          className="rounded-md border border-ink-600 bg-ink-800 px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:border-emerald-500/50 hover:text-white disabled:opacity-40"
+          className={
+            b.action === "delete"
+              ? "rounded-md border border-ink-600 bg-ink-800 px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:border-red-500/50 hover:text-red-300 disabled:opacity-40"
+              : "rounded-md border border-ink-600 bg-ink-800 px-3 py-1 text-xs font-medium text-white/80 transition-colors hover:border-emerald-500/50 hover:text-white disabled:opacity-40"
+          }
         >
           {busy === b.action ? "…" : b.label}
         </button>

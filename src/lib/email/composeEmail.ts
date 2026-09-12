@@ -175,18 +175,25 @@ export type ComposeEmailResult =
  * structured-output enforcement (with the SDK's own built-in retry if
  * the model drifts off-shape) instead of hoping the instructions get
  * followed.
+ *
+ * MILESTONE 5G — CORRECTION to the above: a discriminated union does
+ * NOT compile to a JSON Schema with type: "object" at the root (it
+ * produces a oneOf/anyOf structure instead), which is a hard
+ * requirement for OpenAI's structured outputs — this broke EVERY
+ * composition attempt with "must produce a JSON Schema with type
+ * object at the root", a strictly worse failure than the one this was
+ * meant to fix. Corrected to a single flat object with the
+ * compose-only fields marked optional at the schema level; the actual
+ * "subject/body required when action is compose" rule is enforced
+ * manually below instead, since Zod's type system can't express that
+ * constraint within a single flat object the way a union could.
  */
-const ComposeEmailOutputSchema = z.discriminatedUnion("action", [
-  z.object({
-    action: z.literal("compose"),
-    subject: z.string().min(1),
-    body: z.string().min(1),
-  }),
-  z.object({
-    action: z.literal("request_info"),
-    reason: z.string().min(1),
-  }),
-]);
+const ComposeEmailOutputSchema = z.object({
+  action: z.enum(["compose", "request_info"]),
+  subject: z.string().optional(),
+  body: z.string().optional(),
+  reason: z.string().optional(),
+});
 
 function buildUserPrompt(input: ComposeEmailInput): string {
   const { prospect, product, step, previousSends } = input;
@@ -341,13 +348,17 @@ export async function composeOutreachEmail(
   }
 
   if (output.action === "compose") {
-    const subject = output.subject.trim();
-    const body = output.body.trim();
+    const subject = output.subject?.trim();
+    const body = output.body?.trim();
     if (!subject || !body) {
       throw new Error("Email composer returned an empty subject or body.");
     }
     return { action: "compose", subject, body };
   }
 
-  return { action: "request_info", reason: output.reason.trim() };
+  const reason = output.reason?.trim();
+  if (!reason) {
+    throw new Error('request_info output missing a "reason".');
+  }
+  return { action: "request_info", reason };
 }

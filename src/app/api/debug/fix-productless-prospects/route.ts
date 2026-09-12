@@ -54,17 +54,29 @@ async function findBrokenProspects() {
   }>;
 }
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+
+  // MILESTONE 5H — a plain link visit is a GET request; applying via
+  // POST assumes tooling (curl, Postman) beyond what's been used for
+  // every other diagnostic in this whole investigation, which has all
+  // been done by visiting URLs directly in a browser. ?confirm=yes
+  // keeps this from being triggered by an accidental link click or a
+  // crawler while still working as a simple browser visit.
+  if (searchParams.get("confirm") === "yes") {
+    return applyFix();
+  }
+
   const broken = await findBrokenProspects();
   return noCacheJson({
     dryRun: true,
     affectedCount: broken.length,
     prospects: broken,
-    note: "This is a preview only — nothing changed. POST to this same URL to actually fix them.",
+    note: "This is a preview only — nothing changed. Add &confirm=yes to this same URL to actually fix them.",
   });
 }
 
-export async function POST(_req: NextRequest) {
+async function applyFix() {
   const broken = await findBrokenProspects();
   const fixed: string[] = [];
 
@@ -86,4 +98,8 @@ export async function POST(_req: NextRequest) {
     fixed,
     note: "These now show under Follow-ups' escalated/needs-review state, and the Dashboard's alerts. Assign a real product (or delete) to resolve each.",
   });
+}
+
+export async function POST(_req: NextRequest) {
+  return applyFix();
 }

@@ -385,6 +385,29 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
     return;
   }
 
+  // MILESTONE 5L — a real, confirmed inconsistency this fixes: if a
+  // person cancels the task WHILE this subtask's operation was already
+  // in flight (e.g. an email actively sending), cancelTask() marks this
+  // subtask CANCELLED immediately — but that in-flight operation has no
+  // way to actually be aborted mid-send, so it finishes regardless, and
+  // this code used to unconditionally overwrite the status straight
+  // back to COMPLETED afterward, silently undoing the cancellation. Not
+  // dangerous (the send already genuinely happened either way — nothing
+  // here can un-send an email), but confusing: a task showing CANCELLED
+  // with a subtask showing COMPLETED underneath it. Re-checking the
+  // current status first respects a cancellation that happened while
+  // this was running, rather than blindly overwriting it.
+  const currentSubtaskState = await getTaskById(subtask.id);
+  if (currentSubtaskState?.status === "CANCELLED") {
+    await logActivity({
+      user_id: parent.user_id,
+      task_id: subtask.id,
+      event_type: "SUBTASK_COMPLETED",
+      message: `${subtask.title}: finished after being cancelled — this operation was already in progress and could not be stopped mid-flight. ${result.summary}`,
+    });
+    return;
+  }
+
   if (result.success) {
     await updateTask(subtask.id, {
       status: "COMPLETED",
@@ -819,7 +842,36 @@ export async function recoverInterruptedTasks(): Promise<void> {
   );
   const staleParents = staleParentsResult.rows as unknown as AgentTask[];
 
+  // MILESTONE 5A — a real, confirmed root cause this fixes: on Vercel,
+  // a cold start is a routine, frequent, expected event — not the rare
+  // crash this NEEDS_INPUT behavior was designed around. A parent task
+  // caught mid-step by ANY cold start got permanently stuck awaiting a
+  // human who, in practice, has no reliable way to notice — this
+  // directly caused a real prospecting task to silently stall twice in
+  // a row, with its subtasks safely reset to QUEUED but never actually
+  // picked back up, since the parent itself was no longer active.
+  // Locally, a genuine crash is a much rarer, more meaningful signal —
+  // NEEDS_INPUT there still correctly surfaces it for review.
+  const isVercel = !!process.env.VERCEL;
+
   for (const t of staleParents) {
+    if (isVercel) {
+      await updateTask(t.id, {
+        status: "QUEUED",
+        last_activity_at: nowIso(),
+        worker_id: null,
+        execution_id: null,
+        heartbeat_at: null,
+      });
+      await logActivity({
+        user_id: t.user_id,
+        task_id: t.id,
+        event_type: "TASK_RECOVERY",
+        message: `${t.title}: automatically resumed after a routine cold start.`,
+      });
+      continue;
+    }
+
     await updateTask(t.id, {
       status: "NEEDS_INPUT",
       requires_user_input: 1,

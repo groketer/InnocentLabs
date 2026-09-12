@@ -24,14 +24,22 @@ export const dynamic = "force-dynamic";
 async function findBrokenProspects() {
   const db = await getDb();
 
+  // MILESTONE 5F — a real gap this fixes: the original query only
+  // caught 'not_started' prospects. A prospect whose FIRST email sent
+  // successfully (advancing it to 'active') but whose product was
+  // later deleted before a follow-up attempt is just as broken — it
+  // matches listProspectsDueForOutreach()'s 'active' branch and fails
+  // the exact same way — but was invisible to this cleanup entirely,
+  // which is exactly why the first run found zero affected prospects
+  // despite the error still occurring in production.
   const result = await db.execute({
     sql: `
-      SELECT prospects.id, prospects.name, prospects.product_id, prospects.qualification_status
+      SELECT prospects.id, prospects.name, prospects.product_id, prospects.qualification_status, prospects.sequence_status
       FROM prospects
       LEFT JOIN products ON products.id = prospects.product_id
       WHERE prospects.user_id = ?
         AND prospects.qualification_status = 'qualified'
-        AND prospects.sequence_status = 'not_started'
+        AND prospects.sequence_status IN ('not_started', 'active', 'pending_approval')
         AND (prospects.product_id IS NULL OR products.id IS NULL)
     `,
     args: [LOCAL_USER_ID],
@@ -42,6 +50,7 @@ async function findBrokenProspects() {
     name: string;
     product_id: string | null;
     qualification_status: string;
+    sequence_status: string;
   }>;
 }
 

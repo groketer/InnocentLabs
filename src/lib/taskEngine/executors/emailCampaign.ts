@@ -69,6 +69,16 @@ export async function composeAndSendOutreachEmail(
   }
 
   if (!prospect.product_id) {
+    // MILESTONE 5F — logging added because the cleanup utility found
+    // zero affected prospects despite this error still occurring in
+    // production — meaning either this is a genuinely new prospect each
+    // time (expected, each gets flagged and stops retrying) or the same
+    // one repeating (would mean the fix below isn't actually taking
+    // effect). This is the only way to tell which, rather than guessing
+    // further.
+    console.error(
+      `[emailCampaign] Missing product_id for prospect ${prospect.id} (${prospect.name}) — sequence_status was: ${prospect.sequence_status}`
+    );
     // MILESTONE 5B — without this, the prospect's sequence_status never
     // advances past "not_started", so it matches
     // listProspectsDueForOutreach() again tomorrow, and every day after

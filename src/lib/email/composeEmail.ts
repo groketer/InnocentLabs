@@ -238,6 +238,18 @@ function parseComposedEmail(raw: string): ComposeEmailResult {
   try {
     parsed = extractAndParseJson(raw);
   } catch {
+    // MILESTONE 5D — this is still happening even with the more robust
+    // extraction in place, meaning the raw output isn't just JSON
+    // wrapped in commentary (already handled) — something deeper is
+    // going on: genuine truncation, malformed JSON, or the model
+    // declining to produce JSON at all. Logging the full raw output
+    // here is what actually answers that, rather than guessing further
+    // — this is email copy, not sensitive credentials, so logging it in
+    // full is safe.
+    console.error(
+      "[composeEmail] Non-JSON output — full raw response:",
+      raw
+    );
     throw new Error("Email composer returned non-JSON output.");
   }
 

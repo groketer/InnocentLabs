@@ -192,6 +192,10 @@ function parseResult(raw: string): ComposeReplyResult {
   try {
     parsed = extractAndParseJson(raw);
   } catch {
+    console.error(
+      "[composeReply] Non-JSON output — full raw response:",
+      raw
+    );
     throw new Error("Reply composer returned non-JSON output.");
   }
 

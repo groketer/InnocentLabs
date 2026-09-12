@@ -1849,6 +1849,13 @@ function extractJsonValue(
   try {
     return extractAndParseJson(cleaned);
   } catch {
+    // MILESTONE 5D — same reasoning as composeEmail/composeReply:
+    // logging the actual raw output is what answers "why is this still
+    // failing sometimes" rather than further guesswork.
+    console.error(
+      "[prospecting] Invalid JSON output — full raw response:",
+      cleaned
+    );
     return undefined;
   }
 }

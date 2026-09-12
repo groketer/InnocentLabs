@@ -43,6 +43,7 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
     newProspectsToday,
     failedTasksLast24h,
     needsHumanReply,
+    needsProduct,
     stuckTasks,
     tickInfo,
   ] = await Promise.all([
@@ -99,6 +100,17 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
       args: [userId],
     }),
     db.execute({
+      // MILESTONE 5M — a real, confirmed labeling bug this fixes:
+      // needs_human_reply was being reused for prospects with no valid
+      // product assigned — a completely different situation with
+      // nothing to do with replying to anyone. This directly confused
+      // a real user, who correctly couldn't find anything needing a
+      // reply among prospects that actually needed a product. Split
+      // into its own genuinely distinct status and alert.
+      sql: `SELECT COUNT(*) as c FROM prospects WHERE user_id = ? AND sequence_status = 'needs_product'`,
+      args: [userId],
+    }),
+    db.execute({
       sql: `SELECT COUNT(*) as c FROM agent_tasks WHERE user_id = ? AND status = 'RUNNING' AND started_at < ?`,
       args: [userId, twoHoursAgo],
     }),
@@ -125,6 +137,15 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
       severity: "warning",
       message: `${needsReplyCount} prospect${needsReplyCount === 1 ? "" : "s"} escalated for a human reply.`,
       count: needsReplyCount,
+    });
+  }
+
+  const needsProductCount = c(needsProduct);
+  if (needsProductCount > 0) {
+    alerts.push({
+      severity: "warning",
+      message: `${needsProductCount} prospect${needsProductCount === 1 ? "" : "s"} need${needsProductCount === 1 ? "s" : ""} a product assigned before outreach can continue.`,
+      count: needsProductCount,
     });
   }
 

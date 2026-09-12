@@ -16,10 +16,16 @@ export const dynamic = "force-dynamic";
  * matching listProspectsDueForOutreach() and retrying forever until
  * fixed here.
  *
+ * MILESTONE 5M — CORRECTION: this originally advanced prospects to
+ * needs_human_reply, which directly confused a real user — that status
+ * is reserved for genuine reply escalations and has nothing to do with
+ * a missing product. Now uses the correctly distinct needs_product
+ * status, AND also catches prospects already mislabeled
+ * needs_human_reply by the earlier version of this fix, migrating them
+ * to the correct status.
+ *
  * GET first to preview affected prospects without changing anything.
- * POST to actually advance them to needs_human_reply — a real,
- * dashboard-monitored status — so each becomes a one-time, actionable
- * item instead of a silent daily failure.
+ * POST to actually advance them.
  */
 async function findBrokenProspects() {
   const db = await getDb();
@@ -39,7 +45,7 @@ async function findBrokenProspects() {
       LEFT JOIN products ON products.id = prospects.product_id
       WHERE prospects.user_id = ?
         AND prospects.qualification_status = 'qualified'
-        AND prospects.sequence_status IN ('not_started', 'active', 'pending_approval')
+        AND prospects.sequence_status IN ('not_started', 'active', 'pending_approval', 'needs_human_reply')
         AND (prospects.product_id IS NULL OR products.id IS NULL)
     `,
     args: [LOCAL_USER_ID],
@@ -82,7 +88,7 @@ async function applyFix() {
 
   for (const p of broken) {
     await updateProspectSequence(LOCAL_USER_ID, p.id, {
-      sequence_status: "needs_human_reply",
+      sequence_status: "needs_product",
     });
     await logActivity({
       user_id: LOCAL_USER_ID,
@@ -96,7 +102,7 @@ async function applyFix() {
   return noCacheJson({
     fixedCount: fixed.length,
     fixed,
-    note: "These now show under Follow-ups' escalated/needs-review state, and the Dashboard's alerts. Assign a real product (or delete) to resolve each.",
+    note: "These now show under Follow-ups as 'Needs a product assigned', and the Dashboard's alerts. Assign a real product (or delete) to resolve each.",
   });
 }
 

@@ -30,6 +30,7 @@ const STATUS_META: Record<
   paused: { label: "Paused", className: "text-white/40" },
   in_conversation: { label: "In conversation (agent replying)", className: "text-emerald-400" },
   needs_human_reply: { label: "Needs your reply", className: "text-amber-400" },
+  needs_product: { label: "Needs a product assigned", className: "text-amber-400" },
   bounced: { label: "Bounced", className: "text-red-400" },
 };
 
@@ -271,7 +272,7 @@ export function FollowUpsContent() {
                     Resume
                   </button>
                 )}
-                {["active", "pending_approval", "paused", "in_conversation", "needs_human_reply"].includes(
+                {["active", "pending_approval", "paused", "in_conversation", "needs_human_reply", "needs_product"].includes(
                   s.sequence_status
                 ) && (
                   <button

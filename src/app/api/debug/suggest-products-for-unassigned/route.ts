@@ -16,7 +16,7 @@ const MODEL = "gpt-4.1-mini";
  * each one" into "confirm what the AI already suggests". Reuses the
  * existing needs_product_decision + candidate_product_names
  * infrastructure (already built, already tested, already has a UI) —
- * this just populates it for prospects that reached needs_human_reply
+ * this just populates it for prospects that reached needs_product
  * via the productless-prospects cleanup rather than the "not a fit"
  * check that infrastructure was originally built for.
  *
@@ -30,7 +30,7 @@ async function findUnassignedNeedingSuggestion() {
       SELECT id, name, organization, fit_reason, evidence
       FROM prospects
       WHERE user_id = ?
-        AND sequence_status = 'needs_human_reply'
+        AND sequence_status = 'needs_product'
         AND product_id IS NULL
         AND needs_product_decision = false
       LIMIT 50
@@ -142,6 +142,6 @@ ${products.map((p) => `- ${p.name}: ${p.description ?? p.category}`).join("\n")}
     withSuggestions: results.filter((r) => r.suggested !== "none").length,
     noPlausibleFit: results.filter((r) => r.suggested === "none").length,
     results,
-    note: "Prospects with suggestions now show the decision UI on the Prospects page — pick one or delete. Those with no plausible fit were left as needs_human_reply for you to review manually.",
+    note: "Prospects with suggestions now show the decision UI on the Prospects page — pick one or delete. Those with no plausible fit were left as needs_product for you to review manually.",
   });
 }

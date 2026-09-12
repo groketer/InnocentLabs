@@ -110,6 +110,7 @@ export interface Prospect {
     | "paused"
     | "in_conversation"
     | "needs_human_reply"
+    | "needs_product"
     | "bounced";
   emails_sent: number;
   last_sent_at?: string;
@@ -1304,19 +1305,20 @@ export async function listActiveSequences(
       SELECT *
       FROM prospects
       WHERE user_id = @user_id
-        AND sequence_status IN ('pending_approval', 'active', 'completed', 'responded', 'unsubscribed', 'paused', 'in_conversation', 'needs_human_reply', 'bounced')
+        AND sequence_status IN ('pending_approval', 'active', 'completed', 'responded', 'unsubscribed', 'paused', 'in_conversation', 'needs_human_reply', 'needs_product', 'bounced')
       ORDER BY
         CASE sequence_status
           WHEN 'needs_human_reply' THEN 0
-          WHEN 'pending_approval' THEN 1
-          WHEN 'in_conversation' THEN 2
-          WHEN 'active' THEN 3
-          WHEN 'paused' THEN 4
-          WHEN 'responded' THEN 5
-          WHEN 'completed' THEN 6
-          WHEN 'bounced' THEN 7
-          WHEN 'unsubscribed' THEN 8
-          ELSE 9
+          WHEN 'needs_product' THEN 1
+          WHEN 'pending_approval' THEN 2
+          WHEN 'in_conversation' THEN 3
+          WHEN 'active' THEN 4
+          WHEN 'paused' THEN 5
+          WHEN 'responded' THEN 6
+          WHEN 'completed' THEN 7
+          WHEN 'bounced' THEN 8
+          WHEN 'unsubscribed' THEN 9
+          ELSE 10
         END,
         updated_at DESC
       LIMIT 200

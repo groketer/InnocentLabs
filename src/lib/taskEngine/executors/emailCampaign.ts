@@ -84,11 +84,16 @@ export async function composeAndSendOutreachEmail(
     // listProspectsDueForOutreach() again tomorrow, and every day after
     // — the same doomed send retried forever rather than surfacing once
     // as something a person can actually fix (assign a product, or
-    // delete). needs_human_reply is a real, already-monitored status —
-    // it shows up in the Dashboard's alerts as something needing
-    // attention, rather than silently repeating in the background.
+    // delete).
+    //
+    // MILESTONE 5M — CORRECTION: this originally used
+    // needs_human_reply, which directly confused a real user — that
+    // status is meant for genuine reply escalations from
+    // inboundProcessor.ts, and this has nothing to do with replying to
+    // anyone. needs_product is a real, distinct, dashboard-monitored
+    // status for exactly this situation instead.
     await updateProspectSequence(userId, prospect.id, {
-      sequence_status: "needs_human_reply",
+      sequence_status: "needs_product",
     });
     return {
       success: false,
@@ -101,11 +106,11 @@ export async function composeAndSendOutreachEmail(
   const product = await getProductById(prospect.product_id);
 
   if (!product) {
-    // MILESTONE 5B — same class of bug as the missing product_id case
-    // just above: a product_id pointing at a deleted or nonexistent
-    // product would otherwise retry forever too, for the same reason.
+    // MILESTONE 5B/5M — same class of bug as the missing product_id
+    // case just above, same correction: needs_product, not
+    // needs_human_reply.
     await updateProspectSequence(userId, prospect.id, {
-      sequence_status: "needs_human_reply",
+      sequence_status: "needs_product",
     });
     return {
       success: false,

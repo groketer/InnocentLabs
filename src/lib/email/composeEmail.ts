@@ -35,7 +35,6 @@ import type { EmailSend } from "@/lib/models/emailSends";
 import { recordApiUsage } from "@/lib/models/apiUsage";
 import { LOCAL_USER_ID } from "@/lib/localUser";
 import { searchProductKnowledge } from "@/lib/models/productDocuments";
-import { extractAndParseJson } from "@/lib/extractAndParseJson";
 
 const MODEL = "gpt-4.1-mini";
 const MAX_TURNS = 4;
@@ -165,6 +164,30 @@ export type ComposeEmailResult =
   | { action: "compose"; subject: string; body: string }
   | { action: "request_info"; reason: string };
 
+/**
+ * MILESTONE 5E — the actual fix for a genuinely confirmed failure: the
+ * model sometimes ignores the prompt's "respond with ONLY a JSON
+ * object" instruction entirely and just writes the email as plain
+ * natural-language text instead — confirmed directly from a real
+ * production failure log, not inferred. No amount of prompt wording or
+ * post-hoc string parsing can fix a model that skips the format
+ * entirely; passing this as the Agent's outputType uses OpenAI's native
+ * structured-output enforcement (with the SDK's own built-in retry if
+ * the model drifts off-shape) instead of hoping the instructions get
+ * followed.
+ */
+const ComposeEmailOutputSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("compose"),
+    subject: z.string().min(1),
+    body: z.string().min(1),
+  }),
+  z.object({
+    action: z.literal("request_info"),
+    reason: z.string().min(1),
+  }),
+]);
+
 function buildUserPrompt(input: ComposeEmailInput): string {
   const { prospect, product, step, previousSends } = input;
 
@@ -233,54 +256,6 @@ function buildUserPrompt(input: ComposeEmailInput): string {
   return lines.join("\n");
 }
 
-function parseComposedEmail(raw: string): ComposeEmailResult {
-  let parsed: unknown;
-  try {
-    parsed = extractAndParseJson(raw);
-  } catch {
-    // MILESTONE 5D — this is still happening even with the more robust
-    // extraction in place, meaning the raw output isn't just JSON
-    // wrapped in commentary (already handled) — something deeper is
-    // going on: genuine truncation, malformed JSON, or the model
-    // declining to produce JSON at all. Logging the full raw output
-    // here is what actually answers that, rather than guessing further
-    // — this is email copy, not sensitive credentials, so logging it in
-    // full is safe.
-    console.error(
-      "[composeEmail] Non-JSON output — full raw response:",
-      raw
-    );
-    throw new Error("Email composer returned non-JSON output.");
-  }
-
-  if (typeof parsed !== "object" || parsed === null) {
-    throw new Error("Email composer output was not a JSON object.");
-  }
-
-  const obj = parsed as Record<string, unknown>;
-
-  if (obj.action === "request_info") {
-    if (typeof obj.reason !== "string" || !obj.reason.trim()) {
-      throw new Error('request_info output missing a "reason".');
-    }
-    return { action: "request_info", reason: obj.reason.trim() };
-  }
-
-  if (obj.action === "compose") {
-    if (typeof obj.subject !== "string" || typeof obj.body !== "string") {
-      throw new Error('Email composer output missing "subject" or "body".');
-    }
-    const subject = obj.subject.trim();
-    const body = obj.body.trim();
-    if (!subject || !body) {
-      throw new Error("Email composer returned an empty subject or body.");
-    }
-    return { action: "compose", subject, body };
-  }
-
-  throw new Error(`Email composer returned an unrecognized action: ${String(obj.action)}`);
-}
-
 /**
  * MILESTONE 3U — product knowledge base.
  *
@@ -343,6 +318,7 @@ export async function composeOutreachEmail(
     model: MODEL,
     instructions: SYSTEM_PROMPT,
     tools: [webSearchTool(), buildKnowledgeSearchTool(input.product.id)],
+    outputType: ComposeEmailOutputSchema,
   });
 
   const result = await run(agent, buildUserPrompt(input), {
@@ -358,11 +334,20 @@ export async function composeOutreachEmail(
     output_tokens: usage.outputTokens,
   });
 
-  const raw = result.finalOutput;
+  const output = result.finalOutput;
 
-  if (!raw) {
+  if (!output) {
     throw new Error("Email composer returned no output.");
   }
 
-  return parseComposedEmail(raw);
+  if (output.action === "compose") {
+    const subject = output.subject.trim();
+    const body = output.body.trim();
+    if (!subject || !body) {
+      throw new Error("Email composer returned an empty subject or body.");
+    }
+    return { action: "compose", subject, body };
+  }
+
+  return { action: "request_info", reason: output.reason.trim() };
 }

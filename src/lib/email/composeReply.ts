@@ -241,6 +241,13 @@ export async function composeReply(
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+  // MILESTONE 5E — same reasoning and same confirmed failure mode as
+  // composeEmail.ts: the model can ignore a prompt instruction to
+  // return JSON and just write plain text instead. This file uses the
+  // plain chat.completions API rather than the Agents SDK, so the fix
+  // takes a different, but equivalent, form — response_format enforces
+  // valid JSON at the API level rather than hoping the prompt wording
+  // is followed.
   const completion = await client.chat.completions.create({
     model: MODEL,
     messages: [
@@ -248,6 +255,7 @@ export async function composeReply(
       { role: "user", content: buildUserPrompt(input) },
     ],
     temperature: 0.5,
+    response_format: { type: "json_object" },
   });
 
   if (completion.usage) {

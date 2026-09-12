@@ -1031,6 +1031,12 @@ Do not add commentary outside the JSON.
           searchContextSize: "high",
         }),
       ],
+
+      // MILESTONE 5E — same fix, same reasoning as composeEmail.ts:
+      // guarantees valid, schema-matching JSON at the API level rather
+      // than relying on the "Do not use Markdown fences. Do not add
+      // commentary" instructions above actually being followed.
+      outputType: LivePortfolioRefreshSchema,
     });
 
   try {
@@ -1057,34 +1063,15 @@ JSON object.
       output_tokens: result.state.usage.outputTokens,
     });
 
-    const raw =
+    const validation =
       result.finalOutput;
 
-    const parsedJsonOrUndefined =
-      extractJsonValue(raw);
-
-    if (parsedJsonOrUndefined === undefined) {
+    if (!validation) {
       return {
         discovered: [],
         skipped: [],
         error:
-          "Live marketplace refresh returned no valid JSON.",
-      };
-    }
-
-    const parsedJson: unknown = parsedJsonOrUndefined;
-
-    const validation =
-      LivePortfolioRefreshSchema.safeParse(
-        parsedJson
-      );
-
-    if (!validation.success) {
-      return {
-        discovered: [],
-        skipped: [],
-        error:
-          "Live marketplace refresh returned an invalid structure.",
+          "Live marketplace refresh returned no output.",
       };
     }
 
@@ -1096,7 +1083,7 @@ JSON object.
 
     for (
       const product of
-        validation.data.products
+        validation.products
     ) {
       const name =
         normalizeWhitespace(

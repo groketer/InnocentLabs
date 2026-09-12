@@ -46,17 +46,31 @@ async function findUnassignedNeedingSuggestion() {
   }>;
 }
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+
+  // MILESTONE 5K — same reasoning as fix-productless-prospects:
+  // ?confirm=yes lets this run via a plain browser link visit instead
+  // of requiring POST-capable tooling, while still not being
+  // triggerable by an accidental click or crawler.
+  if (searchParams.get("confirm") === "yes") {
+    return runSuggestions();
+  }
+
   const candidates = await findUnassignedNeedingSuggestion();
   return noCacheJson({
     dryRun: true,
     eligibleCount: candidates.length,
     prospects: candidates.map((p) => ({ id: p.id, name: p.name })),
-    note: "This is a preview only — nothing changed. POST to this same URL to run the AI review.",
+    note: "This is a preview only — nothing changed. Add &confirm=yes to this same URL to run the AI review (makes real OpenAI calls, one per prospect).",
   });
 }
 
 export async function POST(_req: NextRequest) {
+  return runSuggestions();
+}
+
+async function runSuggestions() {
   if (!process.env.OPENAI_API_KEY) {
     return noCacheJson({ error: "OPENAI_API_KEY is not set." }, { status: 500 });
   }

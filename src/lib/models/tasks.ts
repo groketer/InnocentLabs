@@ -244,8 +244,47 @@ export async function listActiveTopLevelTasks(): Promise<AgentTask[]> {
  * every other mutation in this file, so this can never touch a task
  * belonging to someone else.
  */
+/**
+ * MILESTONE 5Q — CORRECTION: this originally went straight to deleting
+ * the rows, which failed with a generic, unhelpful error the moment any
+ * OTHER table's foreign key still pointed at this task —
+ * prospects.source_task_id, activity_events.task_id, and
+ * email_sends.task_id all reference agent_tasks(id) with no ON DELETE
+ * behavior specified, so Postgres rejects the delete outright by
+ * default whenever any of those rows exist, which for almost any real
+ * task is guaranteed (every task logs activity; a prospecting task
+ * creates prospects; a campaign task creates sends). The actual intent
+ * — confirmed directly — is that deleting a task should remove ONLY the
+ * task record itself, never the prospects, sends, or activity history
+ * that reference it. Nulling out every reference first, for both the
+ * parent and its subtasks, is what makes that true rather than just
+ * asserted.
+ */
 export async function deleteTaskAndSubtasks(id: string, userId: string): Promise<void> {
   const db = await getDb();
+
+  const subtaskIdsResult = await db.execute({
+    sql: `SELECT id FROM agent_tasks WHERE parent_task_id = @id AND user_id = @user_id`,
+    args: { id, user_id: userId },
+  });
+  const subtaskIds = (subtaskIdsResult.rows as unknown as Array<{ id: string }>).map((r) => r.id);
+  const allIds = [id, ...subtaskIds];
+
+  for (const taskId of allIds) {
+    await db.execute({
+      sql: `UPDATE prospects SET source_task_id = NULL WHERE source_task_id = @task_id AND user_id = @user_id`,
+      args: { task_id: taskId, user_id: userId },
+    });
+    await db.execute({
+      sql: `UPDATE activity_events SET task_id = NULL WHERE task_id = @task_id AND user_id = @user_id`,
+      args: { task_id: taskId, user_id: userId },
+    });
+    await db.execute({
+      sql: `UPDATE email_sends SET task_id = NULL WHERE task_id = @task_id AND user_id = @user_id`,
+      args: { task_id: taskId, user_id: userId },
+    });
+  }
+
   await db.execute({
     sql: `DELETE FROM agent_tasks WHERE parent_task_id = @id AND user_id = @user_id`,
     args: { id, user_id: userId },

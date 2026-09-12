@@ -24,6 +24,12 @@ export function AgentQuestionsAndSuggestions() {
   const [suggestions, setSuggestions] = useState<AgentSuggestion[] | null>(null);
   const [answerDrafts, setAnswerDrafts] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  // MILESTONE 5W — collapsed by default so these supplementary sections
+  // don't push the actually-important dashboard content further down —
+  // the count stays visible in the header either way, so nothing here
+  // goes unnoticed, just out of the way until wanted.
+  const [questionsExpanded, setQuestionsExpanded] = useState(false);
+  const [suggestionsExpanded, setSuggestionsExpanded] = useState(false);
 
   async function load() {
     try {
@@ -86,59 +92,81 @@ export function AgentQuestionsAndSuggestions() {
     <div className="mt-6 space-y-3">
       {hasQuestions && (
         <div className="rounded-md border border-ink-700 bg-ink-900 p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-white/40">
-            Questions from product study
-          </p>
-          <div className="mt-2 space-y-3">
-            {questions!.map((q) => (
-              <div key={q.id} className="rounded-md border border-ink-700 bg-ink-800 p-3">
-                <p className="text-sm text-white/80">{q.question}</p>
-                <div className="mt-2 flex gap-2">
-                  <input
-                    type="text"
-                    value={answerDrafts[q.id] ?? ""}
-                    onChange={(e) =>
-                      setAnswerDrafts({ ...answerDrafts, [q.id]: e.target.value })
-                    }
-                    placeholder="Your answer…"
-                    className="flex-1 rounded-md border border-ink-600 bg-ink-950 px-2 py-1 text-xs text-white placeholder:text-white/30"
-                  />
-                  <button
-                    disabled={busyId === q.id || !(answerDrafts[q.id] ?? "").trim()}
-                    onClick={() => submitAnswer(q.id)}
-                    className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40"
-                  >
-                    Answer
-                  </button>
+          <button
+            onClick={() => setQuestionsExpanded((v) => !v)}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <p className="text-xs font-medium uppercase tracking-wide text-white/40">
+              Questions from product study
+              <span className="ml-2 rounded-full bg-ink-700 px-2 py-0.5 text-[10px] normal-case tracking-normal text-white/60">
+                {questions!.length}
+              </span>
+            </p>
+            <span className="text-xs text-white/30">{questionsExpanded ? "Hide" : "Show"}</span>
+          </button>
+          {questionsExpanded && (
+            <div className="mt-2 space-y-3">
+              {questions!.map((q) => (
+                <div key={q.id} className="rounded-md border border-ink-700 bg-ink-800 p-3">
+                  <p className="text-sm text-white/80">{q.question}</p>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      type="text"
+                      value={answerDrafts[q.id] ?? ""}
+                      onChange={(e) =>
+                        setAnswerDrafts({ ...answerDrafts, [q.id]: e.target.value })
+                      }
+                      placeholder="Your answer…"
+                      className="flex-1 rounded-md border border-ink-600 bg-ink-950 px-2 py-1 text-xs text-white placeholder:text-white/30"
+                    />
+                    <button
+                      disabled={busyId === q.id || !(answerDrafts[q.id] ?? "").trim()}
+                      onClick={() => submitAnswer(q.id)}
+                      className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-40"
+                    >
+                      Answer
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {hasSuggestions && (
         <div className="rounded-md border border-ink-700 bg-ink-900 p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-white/40">
-            Suggestions from product study
-          </p>
-          <div className="mt-2 space-y-2">
-            {suggestions!.map((s) => (
-              <div
-                key={s.id}
-                className="flex items-start justify-between gap-3 rounded-md border border-ink-700 bg-ink-800 p-3"
-              >
-                <p className="text-sm text-white/80">{s.suggestion}</p>
-                <button
-                  disabled={busyId === s.id}
-                  onClick={() => dismiss(s.id)}
-                  className="shrink-0 rounded-md border border-ink-600 px-2 py-1 text-xs text-white/50 hover:text-white disabled:opacity-40"
+          <button
+            onClick={() => setSuggestionsExpanded((v) => !v)}
+            className="flex w-full items-center justify-between text-left"
+          >
+            <p className="text-xs font-medium uppercase tracking-wide text-white/40">
+              Suggestions from product study
+              <span className="ml-2 rounded-full bg-ink-700 px-2 py-0.5 text-[10px] normal-case tracking-normal text-white/60">
+                {suggestions!.length}
+              </span>
+            </p>
+            <span className="text-xs text-white/30">{suggestionsExpanded ? "Hide" : "Show"}</span>
+          </button>
+          {suggestionsExpanded && (
+            <div className="mt-2 space-y-2">
+              {suggestions!.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-start justify-between gap-3 rounded-md border border-ink-700 bg-ink-800 p-3"
                 >
-                  Dismiss
-                </button>
-              </div>
-            ))}
-          </div>
+                  <p className="text-sm text-white/80">{s.suggestion}</p>
+                  <button
+                    disabled={busyId === s.id}
+                    onClick={() => dismiss(s.id)}
+                    className="shrink-0 rounded-md border border-ink-600 px-2 py-1 text-xs text-white/50 hover:text-white disabled:opacity-40"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, FormEvent } from "react";
 import { ChatTaskCard } from "./ChatTaskCard";
 import { formatTimestamp } from "@/lib/format";
+import type { ConversationSummary } from "@/lib/models/chat";
 
 interface ChatMessage {
   role: "user" | "assistant";
@@ -26,45 +27,72 @@ export function ChatWindow() {
   const [isStartingNewChat, setIsStartingNewChat] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // MILESTONE 4B — the actual root cause of "the agent keeps forgetting":
-  // this generated a brand-new random ID on every single page load, so
-  // the save/load mechanism below (which genuinely works) never had a
-  // matching ID to retrieve previous messages from — every visit looked
-  // like a first-ever conversation, even though messages were being
-  // saved correctly the whole time. Persisting the ID in localStorage
-  // means reopening the page reuses the same conversation and actually
-  // loads its history, the way it was always meant to.
-  const conversationIdRef = useRef<string>(
-    (() => {
-      if (typeof window === "undefined") return `conv-${Date.now()}`;
-      const STORAGE_KEY = "innocent-intelligence-conversation-id";
-      const existing = window.localStorage.getItem(STORAGE_KEY);
-      if (existing) return existing;
-      const fresh =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `conv-${Date.now()}`;
-      window.localStorage.setItem(STORAGE_KEY, fresh);
-      return fresh;
-    })()
-  );
+  // MILESTONE 5U — CORRECTION: converted from a useRef to useState. A
+  // ref doesn't trigger a re-render when it changes, which was fine for
+  // the original "set once on mount, never switch" design — but a real,
+  // confirmed bug depended on exactly that limitation: "New chat"
+  // overwrote the single ID kept in localStorage, permanently losing
+  // the only reference to the previous conversation's messages, even
+  // though they were never actually deleted from the database. Needs
+  // to be state now so the UI can react to switching between
+  // conversations, not just starting new ones.
+  const [conversationId, setConversationId] = useState<string>(() => {
+    if (typeof window === "undefined") return `conv-${Date.now()}`;
+    const STORAGE_KEY = "innocent-intelligence-conversation-id";
+    const existing = window.localStorage.getItem(STORAGE_KEY);
+    if (existing) return existing;
+    const fresh =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `conv-${Date.now()}`;
+    window.localStorage.setItem(STORAGE_KEY, fresh);
+    return fresh;
+  });
+
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  function loadConversationList() {
+    fetch("/api/chat/conversations")
+      .then((res) => res.json())
+      .then((data) => setConversations(Array.isArray(data.conversations) ? data.conversations : []))
+      .catch(() => undefined);
+  }
+
+  function loadMessages(id: string) {
+    fetch(`/api/chat?conversationId=${encodeURIComponent(id)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        setMessages(
+          Array.isArray(data.messages) && data.messages.length > 0
+            ? data.messages.map((m: ChatMessage & { id: string }) => ({
+                role: m.role,
+                content: m.content,
+                timestamp: m.timestamp ?? (m as unknown as { created_at: string }).created_at,
+              }))
+            : [WELCOME_MESSAGE]
+        );
+      })
+      .catch(() => undefined);
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
   useEffect(() => {
-    fetch(`/api/chat?conversationId=${encodeURIComponent(conversationIdRef.current)}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data.messages) && data.messages.length > 0) {
-          setMessages(data.messages.map((m: ChatMessage & { id: string }) => ({
-            role: m.role, content: m.content, timestamp: m.timestamp ?? (m as unknown as { created_at: string }).created_at,
-          })));
-        }
-      })
-      .catch(() => undefined);
+    loadMessages(conversationId);
+    loadConversationList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function switchConversation(id: string) {
+    const STORAGE_KEY = "innocent-intelligence-conversation-id";
+    window.localStorage.setItem(STORAGE_KEY, id);
+    setConversationId(id);
+    loadMessages(id);
+    setShowHistory(false);
+  }
 
   async function handleNewChat() {
     setIsStartingNewChat(true);
@@ -76,7 +104,7 @@ export function ChatWindow() {
       await fetch("/api/chat/new", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: conversationIdRef.current }),
+        body: JSON.stringify({ conversationId }),
       }).catch(() => undefined);
 
       const STORAGE_KEY = "innocent-intelligence-conversation-id";
@@ -85,8 +113,9 @@ export function ChatWindow() {
           ? crypto.randomUUID()
           : `conv-${Date.now()}`;
       window.localStorage.setItem(STORAGE_KEY, fresh);
-      conversationIdRef.current = fresh;
+      setConversationId(fresh);
       setMessages([WELCOME_MESSAGE]);
+      loadConversationList();
     } finally {
       setIsStartingNewChat(false);
     }
@@ -113,7 +142,7 @@ export function ChatWindow() {
         body: JSON.stringify({
           message: trimmed,
           history: messages, // everything before this new user message
-          conversationId: conversationIdRef.current,
+          conversationId,
         }),
       });
 
@@ -147,20 +176,51 @@ export function ChatWindow() {
 
   return (
     <div className="flex h-full flex-1 flex-col">
-      <div className="flex items-center justify-between border-b border-ink-700 px-4 py-4 sm:px-6">
+      <div className="relative flex items-center justify-between border-b border-ink-700 px-4 py-4 sm:px-6">
         <div>
           <h1 className="text-lg font-semibold text-white">Intelligence</h1>
           <p className="text-xs text-white/40">
             Persists across visits — pick up where you left off, or start fresh below.
           </p>
         </div>
-        <button
-          onClick={handleNewChat}
-          disabled={isStartingNewChat}
-          className="rounded-md border border-ink-600 px-3 py-1.5 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-50"
-        >
-          {isStartingNewChat ? "Starting…" : "New chat"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHistory((v) => !v)}
+            className="rounded-md border border-ink-600 px-3 py-1.5 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300"
+          >
+            History
+          </button>
+          <button
+            onClick={handleNewChat}
+            disabled={isStartingNewChat}
+            className="rounded-md border border-ink-600 px-3 py-1.5 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-50"
+          >
+            {isStartingNewChat ? "Starting…" : "New chat"}
+          </button>
+        </div>
+
+        {showHistory && (
+          <div className="absolute right-4 top-full z-10 mt-1 max-h-96 w-80 overflow-y-auto rounded-md border border-ink-600 bg-ink-900 py-2 shadow-lg sm:right-6">
+            {conversations.length === 0 ? (
+              <p className="px-4 py-3 text-xs text-white/40">No past conversations yet.</p>
+            ) : (
+              conversations.map((c) => (
+                <button
+                  key={c.conversation_id}
+                  onClick={() => switchConversation(c.conversation_id)}
+                  className={`block w-full px-4 py-2 text-left text-xs transition-colors hover:bg-ink-800 ${
+                    c.conversation_id === conversationId ? "bg-ink-800 text-emerald-300" : "text-white/70"
+                  }`}
+                >
+                  <div className="truncate">{c.title}</div>
+                  <div className="mt-0.5 text-[10px] text-white/30">
+                    {formatTimestamp(c.last_message_at)} · {c.message_count} message{c.message_count === 1 ? "" : "s"}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-6 sm:px-6">

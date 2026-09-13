@@ -1149,13 +1149,32 @@ export async function applyDeepQualificationResult(
 export async function listProspectsDueForOutreach(
   userId: string,
   limit: number,
-  includePendingApproval = false
+  includePendingApproval = false,
+  focusProductIds?: string[]
 ): Promise<Prospect[]> {
   const normalizedUserId = userId.trim();
   if (!normalizedUserId) return [];
 
   const db = await getDb();
   const nowIso = new Date().toISOString();
+
+  // MILESTONE 6E — CORRECTION to the Product Focus audit's first
+  // attempt at this: fetching a larger pool and filtering by product in
+  // JavaScript afterward looked right but never actually worked, since
+  // this function already silently clamps its limit to 200 regardless
+  // of what's requested — confirmed directly: a pool of 1200 requested,
+  // 200 returned, zero of the actually-focused prospects reached
+  // because 300 non-focused ones filled the entire capped pool first.
+  //
+  // This is NOT a simple product_id filter, though — a prospect already
+  // sequence_status = 'active' for ANY product must still come through
+  // regardless of focus (that's the "current follow-ups continue" half
+  // of the feature), so the SQL has to express both conditions
+  // together: active-anywhere, OR belongs to a focused product.
+  const focusClause =
+    focusProductIds && focusProductIds.length > 0
+      ? "AND (prospects.sequence_status != 'not_started' OR prospects.product_id = ANY(@focus_product_ids))"
+      : "";
 
   const result = await db.execute({
     sql: `
@@ -1172,6 +1191,7 @@ export async function listProspectsDueForOutreach(
           OR (prospects.sequence_status = 'active' AND prospects.next_send_at IS NOT NULL AND prospects.next_send_at <= @now)
           OR (@include_pending_approval AND prospects.sequence_status = 'pending_approval')
         )
+        ${focusClause}
       ORDER BY
         CASE WHEN prospects.sequence_status = 'active' THEN 0 ELSE 1 END,
         prospects.next_send_at ASC NULLS FIRST,
@@ -1183,6 +1203,7 @@ export async function listProspectsDueForOutreach(
       now: nowIso,
       limit: Math.min(Math.max(Math.floor(limit), 1), 200),
       include_pending_approval: includePendingApproval,
+      ...(focusProductIds && focusProductIds.length > 0 ? { focus_product_ids: focusProductIds } : {}),
     },
   });
 

@@ -236,27 +236,27 @@ export const emailCampaignExecutor: TaskExecutor = {
 
     const batchSize = Math.min(remainingBudget, MAX_BATCH_PER_TASK);
 
+    // MILESTONE 6E — the actual, correct fix found during a full audit
+    // of Product Focus: filtering in the SQL itself, before LIMIT is
+    // applied, rather than over-fetching a larger pool and filtering in
+    // JavaScript afterward — that first attempt looked right but never
+    // actually worked, since this query has its own internal 200-row
+    // cap regardless of what's requested. Confirmed directly: with 300
+    // non-focused prospects and only 10 focused ones, the old approach
+    // returned zero of the 10 — the cap filled entirely with
+    // non-focused rows before the JS filter ever got a chance to run.
     const candidates = await listProspectsDueForOutreach(
       task.user_id,
       batchSize * CANDIDATE_POOL_MULTIPLIER,
-      !settings.require_manual_approval
+      !settings.require_manual_approval,
+      settings.focus_product_ids.length > 0 ? settings.focus_product_ids : undefined
     );
 
-    // MILESTONE 5V — Product(s) Focus: when active, a prospect who
-    // hasn't been contacted yet (not_started) is exactly "new work" —
-    // paused for anything outside the focus list. A prospect already
-    // active mid-sequence is exactly the "current follow-ups continue
-    // until completion" case from the actual request, and is
-    // deliberately let through here regardless of which product it's
-    // for — this filter must never touch that case.
-    const focusFiltered =
-      settings.focus_product_ids.length > 0
-        ? candidates.filter(
-            (p) =>
-              p.sequence_status !== "not_started" ||
-              (p.product_id && settings.focus_product_ids.includes(p.product_id))
-          )
-        : candidates;
+    // MILESTONE 5V — Product(s) Focus: the query above already applies
+    // the full "not_started requires a focused product, anything else
+    // passes regardless" condition directly in SQL now — no further
+    // filtering needed here.
+    const focusFiltered = candidates;
 
     // MILESTONE 3R — international-timezone-aware sending. A prospect
     // with no known country falls back to "always eligible" (see

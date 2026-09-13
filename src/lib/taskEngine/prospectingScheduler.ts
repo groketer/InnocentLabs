@@ -40,9 +40,12 @@ const PROSPECTING_TITLE = "Autonomous prospecting run";
 // individual product only got prospected roughly once every 2-3 weeks.
 // Allowing several runs per day (each still rotating toward whichever
 // product has the fewest prospects) is what actually fixes this, not
-// just increasing per-run limits — this is configurable so it can be
-// tuned down from Settings if the pace ever needs throttling back.
-const DEFAULT_MAX_PROSPECTING_RUNS_PER_DAY = 6;
+// just increasing per-run limits.
+//
+// MILESTONE 5X — CORRECTION: this used to hardcode 6 here despite
+// already claiming to be "configurable from Settings" — it wasn't. Now
+// genuinely reads settings.max_prospecting_runs_per_day (defaulting to
+// 3), adjustable without a code change or redeploy.
 const MIN_MINUTES_BETWEEN_PROSPECTING_RUNS = 45;
 
 declare global {
@@ -74,6 +77,12 @@ async function canCreateProspectingTaskNow(userId: string): Promise<boolean> {
   const db = await getDb();
   const datePrefix = `${todayKey()}%`;
 
+  // MILESTONE 5X — reads the actual, adjustable setting now, rather
+  // than the hardcoded constant this comment used to (incorrectly)
+  // claim was already configurable.
+  const settings = await getSettings();
+  const maxRunsPerDay = settings.max_prospecting_runs_per_day;
+
   const result = await db.execute({
     sql: `
       SELECT created_at
@@ -90,7 +99,7 @@ async function canCreateProspectingTaskNow(userId: string): Promise<boolean> {
 
   const rows = result.rows as unknown as { created_at: string }[];
 
-  if (rows.length >= DEFAULT_MAX_PROSPECTING_RUNS_PER_DAY) {
+  if (rows.length >= maxRunsPerDay) {
     return false;
   }
 

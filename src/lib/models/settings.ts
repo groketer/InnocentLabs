@@ -79,6 +79,18 @@ export interface AppSettings {
   focus_product_ids: string[];
   /** Optional — if set, focus automatically clears itself once this passes. Null means manual-only, stays on until explicitly turned off. */
   focus_expires_at: string | null;
+
+  /**
+   * MILESTONE 5X — the actual fix for a real, confirmed complaint:
+   * prospecting was firing up to 6 times a day (a hardcoded constant,
+   * despite an existing comment already claiming this was "configurable
+   * from Settings" — it never actually was), consuming real API cost
+   * for research the person didn't feel they needed at that pace.
+   * Default lowered to 3 and now genuinely adjustable here rather than
+   * requiring a code change and redeploy every time the desired pace
+   * shifts.
+   */
+  max_prospecting_runs_per_day: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -96,6 +108,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autonomous_product_study: true,
   focus_product_ids: [],
   focus_expires_at: null,
+  max_prospecting_runs_per_day: 3,
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<
@@ -181,6 +194,7 @@ export interface UpdateSettingsInput {
   autonomous_product_study?: boolean;
   focus_product_ids?: string[];
   focus_expires_at?: string | null;
+  max_prospecting_runs_per_day?: number;
 }
 
 function validate(input: UpdateSettingsInput): void {
@@ -252,6 +266,15 @@ function validate(input: UpdateSettingsInput): void {
     Number.isNaN(new Date(input.focus_expires_at).getTime())
   ) {
     throw new Error("focus_expires_at must be a valid date or null.");
+  }
+
+  if (
+    input.max_prospecting_runs_per_day !== undefined &&
+    (!Number.isInteger(input.max_prospecting_runs_per_day) ||
+      input.max_prospecting_runs_per_day < 0 ||
+      input.max_prospecting_runs_per_day > 20)
+  ) {
+    throw new Error("max_prospecting_runs_per_day must be a whole number between 0 and 20.");
   }
 }
 

@@ -72,6 +72,8 @@ interface TickStatus {
 export function DashboardContent() {
   const [tasks, setTasks] = useState<AgentTask[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [agentPaused, setAgentPaused] = useState<boolean | null>(null);
+  const [togglingPause, setTogglingPause] = useState(false);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [tickStatus, setTickStatus] = useState<TickStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -120,15 +122,63 @@ export function DashboardContent() {
     };
   }, []);
 
+  // MILESTONE 5Y — the actual "hot button" request: pausing via the
+  // Settings page requires navigating there, toggling a checkbox
+  // buried among many other options, then clicking a separate Save
+  // button that submits everything together — too many steps for a
+  // genuine "I just noticed something wrong, stop it now" moment. This
+  // patches agent_paused alone, immediately, from wherever the person
+  // already is when something looks off.
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((res) => res.json())
+      .then((data) => setAgentPaused(Boolean(data?.settings?.agent_paused)))
+      .catch(() => undefined);
+  }, []);
+
+  async function toggleAgentPaused() {
+    if (agentPaused === null) return;
+    const next = !agentPaused;
+    setTogglingPause(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_paused: next }),
+      });
+      if (res.ok) setAgentPaused(next);
+    } finally {
+      setTogglingPause(false);
+    }
+  }
+
   const current = tasks?.find((t) => t.status === "RUNNING" || t.status === "QUEUED");
   const recent = tasks?.filter((t) => t.id !== current?.id).slice(0, 10) ?? [];
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
-      <h1 className="text-lg font-semibold text-white">Dashboard</h1>
-      <p className="mt-1 text-xs text-white/40">
-        Agent activity and current tasks across Innocent Labs.
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold text-white">Dashboard</h1>
+          <p className="mt-1 text-xs text-white/40">
+            Agent activity and current tasks across Innocent Labs.
+          </p>
+        </div>
+        {agentPaused !== null && (
+          <button
+            onClick={toggleAgentPaused}
+            disabled={togglingPause}
+            className={`shrink-0 rounded-md border px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${
+              agentPaused
+                ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                : "border-red-500/50 bg-red-500/10 text-red-300 hover:bg-red-500/20"
+            }`}
+            title="Immediately pauses or resumes ALL autonomous activity, platform-wide"
+          >
+            {togglingPause ? "…" : agentPaused ? "▶ Resume agent" : "⏸ Pause agent"}
+          </button>
+        )}
+      </div>
 
       <div className="mt-4">
         <GlobalSearch />

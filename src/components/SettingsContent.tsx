@@ -351,6 +351,26 @@ export function SettingsContent() {
               className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
             />
           </label>
+
+          <label className="block">
+            <span className="text-xs text-white/50">Prospecting runs per day</span>
+            <input
+              type="number"
+              min={0}
+              max={20}
+              value={settings.max_prospecting_runs_per_day}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  max_prospecting_runs_per_day: Number(e.target.value),
+                })
+              }
+              className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
+            />
+            <span className="mt-1 block text-[11px] text-white/30">
+              How many times a day new prospecting research runs. Lower this to reduce API cost.
+            </span>
+          </label>
         </div>
 
         <label className="mt-4 flex items-center gap-2">

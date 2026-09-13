@@ -910,10 +910,45 @@ export async function recoverInterruptedTasks(): Promise<void> {
   // picked back up, since the parent itself was no longer active.
   // Locally, a genuine crash is a much rarer, more meaningful signal —
   // NEEDS_INPUT there still correctly surfaces it for review.
+  //
+  // MILESTONE 6C — CORRECTION: this reset EVERY stale parent to
+  // QUEUED unconditionally — but QUEUED is exactly the status that
+  // makes startTask() call planSubtasks() again. For a parent that
+  // already has subtasks planned, that doesn't resume anything — it
+  // appends a fresh, duplicate set on top of the existing ones, every
+  // single time a cold start catches it. Confirmed directly: a real
+  // prospecting task (meant to plan exactly 4 subtasks) accumulated
+  // 156 — precisely 4 × 39, i.e. re-planned 39 separate times over its
+  // ~7 hour life, generating a real AI call for each one. A parent that
+  // already has subtasks needs to stay RUNNING instead, so the next
+  // tick's advanceRunningTask() picks up exactly where it left off.
   const isVercel = !!process.env.VERCEL;
 
   for (const t of staleParents) {
+    const existingSubtasksResult = await db.execute({
+      sql: `SELECT COUNT(*) as c FROM agent_tasks WHERE parent_task_id = ?`,
+      args: [t.id],
+    });
+    const hasExistingSubtasks =
+      Number((existingSubtasksResult.rows[0] as unknown as { c: number }).c) > 0;
+
     if (isVercel) {
+      if (hasExistingSubtasks) {
+        await updateTask(t.id, {
+          last_activity_at: nowIso(),
+          worker_id: null,
+          execution_id: null,
+          heartbeat_at: null,
+        });
+        await logActivity({
+          user_id: t.user_id,
+          task_id: t.id,
+          event_type: "TASK_RECOVERY",
+          message: `${t.title}: cleared a stale worker lock after a cold start — resuming existing subtasks, not re-planning.`,
+        });
+        continue;
+      }
+
       await updateTask(t.id, {
         status: "QUEUED",
         last_activity_at: nowIso(),

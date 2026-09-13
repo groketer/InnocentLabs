@@ -46,6 +46,7 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
     needsProduct,
     stuckTasks,
     tickInfo,
+    apiUsageAnomaly,
   ] = await Promise.all([
     db.execute({
       sql: `SELECT COUNT(*) as c FROM agent_tasks WHERE user_id = ? AND parent_task_id IS NULL AND status IN ('QUEUED','RUNNING')`,
@@ -115,6 +116,34 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
       args: [userId, twoHoursAgo],
     }),
     db.execute(`SELECT value FROM app_meta WHERE key = 'last_tick_at'`),
+    // MILESTONE 6F — automatic API usage anomaly detection, built after
+    // a real, confirmed incident this session: a duplicate-planning bug
+    // spiked hourly API calls from a normal 7-49/hour up to 319/hour
+    // before anyone noticed, purely because nobody happened to check a
+    // diagnostic URL at the right moment. This removes that dependency
+    // on manual vigilance — comparing the current hour's call count
+    // against the recent baseline directly, on every Dashboard load.
+    db.execute({
+      sql: `
+        WITH current_hour AS (
+          SELECT COUNT(*) as c
+          FROM api_usage
+          WHERE user_id = ? AND created_at >= to_char(date_trunc('hour', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+        ),
+        hourly_baseline AS (
+          SELECT date_trunc('hour', created_at::timestamptz) as hour_bucket, COUNT(*) as c
+          FROM api_usage
+          WHERE user_id = ?
+            AND created_at >= to_char(now() - interval '7 days', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+            AND created_at < to_char(date_trunc('hour', now()), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')
+          GROUP BY hour_bucket
+        )
+        SELECT
+          (SELECT c FROM current_hour) as current_hour_calls,
+          COALESCE((SELECT AVG(c) FROM hourly_baseline), 0) as baseline_avg_calls_per_hour
+      `,
+      args: [userId, userId],
+    }),
   ]);
 
   const c = (result: { rows: unknown[] }) =>
@@ -171,6 +200,29 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
     alerts.push({
       severity: "warning",
       message: "No tick has ever been recorded — automation may never have run.",
+    });
+  }
+
+  // MILESTONE 6F — the actual anomaly check. Two conditions, both
+  // required, deliberately: an absolute floor (calls_this_hour > 100)
+  // so a quiet baseline near zero doesn't make ordinary, modest
+  // activity look like a "300% spike" over nothing; and a relative
+  // multiplier (3x the recent baseline) so this stays meaningful even
+  // if genuine, legitimate usage grows over time and a higher hourly
+  // rate becomes the new normal. The real incident this is built from
+  // showed 319 calls in one hour against a same-day baseline in the
+  // 7-49 range — comfortably clears both thresholds together, while a
+  // single busy-but-normal hour should clear neither.
+  const usageAnomalyRow = apiUsageAnomaly.rows[0] as
+    | { current_hour_calls: number | string; baseline_avg_calls_per_hour: number | string }
+    | undefined;
+  const currentHourCalls = Number(usageAnomalyRow?.current_hour_calls ?? 0);
+  const baselineAvg = Number(usageAnomalyRow?.baseline_avg_calls_per_hour ?? 0);
+  if (currentHourCalls > 100 && currentHourCalls > baselineAvg * 3) {
+    alerts.push({
+      severity: "critical",
+      message: `${currentHourCalls} API calls in the last hour — well above the recent baseline (~${Math.round(baselineAvg)}/hour). This is what a runaway task looks like — worth checking Activity before it runs up further cost.`,
+      count: currentHourCalls,
     });
   }
 

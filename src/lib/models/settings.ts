@@ -98,6 +98,14 @@ export interface AppSettings {
    * runs longer than this." Without it, a prospecting task could take
    * as long as it takes regardless of how many times per day it's
    * allowed to start — these are two independent knobs, both needed.
+   *
+   * MILESTONE 6G — default lowered from 60 to 30. A tighter value like
+   * 15 was considered and deliberately avoided: since each engine
+   * check-in only advances a prospecting task by roughly one of its 4
+   * rounds at a time, too short a cap risks a task never completing a
+   * full run at all — repeatedly cut off before finishing rather than
+   * genuinely running faster. 30 is a real reduction from the original
+   * 60 while leaving reasonable room for that mechanical reality.
    */
   max_prospecting_minutes_per_session: number;
 }
@@ -118,7 +126,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   focus_product_ids: [],
   focus_expires_at: null,
   max_prospecting_runs_per_day: 3,
-  max_prospecting_minutes_per_session: 60,
+  max_prospecting_minutes_per_session: 30,
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<

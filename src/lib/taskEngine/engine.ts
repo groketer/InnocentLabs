@@ -299,7 +299,15 @@ async function advanceRunningTask(task: AgentTask): Promise<void> {
   // independent limits. Checked here, at the very top of every
   // advancement step, so a session that's overstayed its window gets
   // stopped on its very next tick rather than continuing indefinitely.
-  if (task.task_type === "web_prospecting") {
+  //
+  // MILESTONE 6B — CORRECTION: restricted to created_by === "system"
+  // (autonomous scheduling) specifically. A manually-triggered
+  // prospecting run (the Products page's "Prospect" button, or the new
+  // manual-override request) is a deliberate, one-off action someone
+  // specifically asked for — cutting it off at an arbitrary time limit
+  // meant for unattended background work would work directly against
+  // the whole point of choosing to do it manually.
+  if (task.task_type === "web_prospecting" && task.created_by === "system") {
     const settings = await getSettings();
     const maxMs = settings.max_prospecting_minutes_per_session * 60_000;
     const ageMs = Date.now() - new Date(task.created_at).getTime();

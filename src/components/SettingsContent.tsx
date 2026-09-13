@@ -157,6 +157,15 @@ export function SettingsContent() {
             Autonomous prospecting — find new prospects on its own, daily
           </span>
         </label>
+        {/* MILESTONE 6B — the actual manual-override request: this
+            already fully worked (the Products page's "Prospect" button
+            has never checked this setting), but nothing said so
+            anywhere near the toggle itself — making the connection
+            explicit here, right where the decision gets made. */}
+        <p className="ml-6 mt-1 text-[11px] text-white/30">
+          Turn this off to pause all automatic prospecting entirely — you can still trigger it
+          manually, for any specific product, any time, from the Products page.
+        </p>
 
         <label className="mt-3 flex items-center gap-2">
           <input

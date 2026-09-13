@@ -91,6 +91,15 @@ export interface AppSettings {
    * shifts.
    */
   max_prospecting_runs_per_day: number;
+
+  /**
+   * MILESTONE 6A — a genuine hard time cap the request explicitly
+   * asked for: not just "fewer sessions per day" but "no single session
+   * runs longer than this." Without it, a prospecting task could take
+   * as long as it takes regardless of how many times per day it's
+   * allowed to start — these are two independent knobs, both needed.
+   */
+  max_prospecting_minutes_per_session: number;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -109,6 +118,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   focus_product_ids: [],
   focus_expires_at: null,
   max_prospecting_runs_per_day: 3,
+  max_prospecting_minutes_per_session: 60,
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<
@@ -195,6 +205,7 @@ export interface UpdateSettingsInput {
   focus_product_ids?: string[];
   focus_expires_at?: string | null;
   max_prospecting_runs_per_day?: number;
+  max_prospecting_minutes_per_session?: number;
 }
 
 function validate(input: UpdateSettingsInput): void {
@@ -275,6 +286,15 @@ function validate(input: UpdateSettingsInput): void {
       input.max_prospecting_runs_per_day > 20)
   ) {
     throw new Error("max_prospecting_runs_per_day must be a whole number between 0 and 20.");
+  }
+
+  if (
+    input.max_prospecting_minutes_per_session !== undefined &&
+    (!Number.isInteger(input.max_prospecting_minutes_per_session) ||
+      input.max_prospecting_minutes_per_session < 5 ||
+      input.max_prospecting_minutes_per_session > 480)
+  ) {
+    throw new Error("max_prospecting_minutes_per_session must be a whole number between 5 and 480.");
   }
 }
 

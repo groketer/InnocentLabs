@@ -293,6 +293,39 @@ async function advanceRunningTask(task: AgentTask): Promise<void> {
   const executor = getExecutor(task.task_type);
   if (!executor) return; // already handled at start
 
+  // MILESTONE 6A — the actual fix for a direct, explicit request: cap
+  // how long a single prospecting session is allowed to run, not just
+  // how many are allowed to start per day — these are genuinely
+  // independent limits. Checked here, at the very top of every
+  // advancement step, so a session that's overstayed its window gets
+  // stopped on its very next tick rather than continuing indefinitely.
+  if (task.task_type === "web_prospecting") {
+    const settings = await getSettings();
+    const maxMs = settings.max_prospecting_minutes_per_session * 60_000;
+    const ageMs = Date.now() - new Date(task.created_at).getTime();
+
+    if (ageMs > maxMs) {
+      const subtasks = await listSubtasks(task.id);
+      for (const s of subtasks) {
+        if (s.status === "QUEUED" || s.status === "RETRYING") {
+          await updateTask(s.id, { status: "CANCELLED" });
+        }
+      }
+      await updateTask(task.id, {
+        status: "CANCELLED",
+        completed_at: nowIso(),
+        error_message: `Stopped automatically after exceeding the ${settings.max_prospecting_minutes_per_session}-minute session limit.`,
+      });
+      await logActivity({
+        user_id: task.user_id,
+        task_id: task.id,
+        event_type: "TASK_CANCELLED",
+        message: `${task.title}: stopped automatically — exceeded the ${settings.max_prospecting_minutes_per_session}-minute session limit.`,
+      });
+      return;
+    }
+  }
+
   const subtasks = await listSubtasks(task.id);
 
   if (subtasks.length === 0 && executor.runTask) {

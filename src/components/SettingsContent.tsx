@@ -371,6 +371,27 @@ export function SettingsContent() {
               How many times a day new prospecting research runs. Lower this to reduce API cost.
             </span>
           </label>
+
+          <label className="block">
+            <span className="text-xs text-white/50">Max minutes per prospecting session</span>
+            <input
+              type="number"
+              min={5}
+              max={480}
+              value={settings.max_prospecting_minutes_per_session}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  max_prospecting_minutes_per_session: Number(e.target.value),
+                })
+              }
+              className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
+            />
+            <span className="mt-1 block text-[11px] text-white/30">
+              A hard cap on how long any single prospecting session is allowed to run before it&apos;s
+              stopped automatically — independent of runs-per-day above.
+            </span>
+          </label>
         </div>
 
         <label className="mt-4 flex items-center gap-2">

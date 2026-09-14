@@ -30,6 +30,7 @@ export type UsageSource =
   | "email_compose"
   | "reply_compose"
   | "deep_qualification"
+  | "product_brief"
   | "chat";
 
 function estimateCost(model: string, inputTokens: number, outputTokens: number): number {

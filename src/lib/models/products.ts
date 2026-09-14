@@ -929,6 +929,65 @@ export async function updateProductSupplementaryKnowledge(
   return product;
 }
 
+/**
+ * MILESTONE 6O — the actual missing piece this responds to: there was
+ * no existing function that writes to problem/audience/positioning/
+ * features at all, anywhere in the codebase — these fields, despite
+ * being exactly what prospecting's buildProductContext() reads and
+ * injects into every prospecting run, could previously only ever be
+ * set at initial product creation, never researched and filled in
+ * afterward. This is what a new "Generate Brief" capability writes to.
+ */
+export async function updateProductBrief(
+  id: string,
+  fields: {
+    problem?: string | null;
+    audience?: string | null;
+    positioning?: string | null;
+    features?: string | null;
+    commercial_model?: string | null;
+    pricing?: string | null;
+    cta?: string | null;
+  }
+): Promise<Product> {
+  const db = await getDb();
+
+  const allowedKeys = ["problem", "audience", "positioning", "features", "commercial_model", "pricing", "cta"] as const;
+  const entries = allowedKeys.filter((k) => fields[k] !== undefined);
+
+  if (entries.length === 0) {
+    const existing = await getProductById(id);
+    if (!existing) throw new Error("Product not found.");
+    return existing;
+  }
+
+  const setClause = entries.map((k) => `${k} = @${k}`).join(", ");
+  const args: Record<string, string | null> = { id };
+  for (const k of entries) {
+    args[k] = fields[k] ?? null;
+  }
+
+  const result = await db.execute({
+    sql: `UPDATE products SET ${setClause}, updated_at = ${NOW_ISO_SQL} WHERE id = @id`,
+    args,
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Product not found.");
+  }
+
+  const result2 = await db.execute({
+    sql: `SELECT * FROM products WHERE id = ?`,
+    args: [id],
+  });
+
+  const product = result2.rows[0] as unknown as Product | undefined;
+  if (!product) {
+    throw new Error("Product was updated but could not be retrieved afterward.");
+  }
+  return product;
+}
+
 export async function updateProductGeographicFocus(
   id: string,
   geographicFocus: string

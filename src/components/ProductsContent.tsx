@@ -75,16 +75,15 @@ export function ProductsContent() {
       .catch(() => undefined);
   }, []);
 
-  async function trigger(id: string, kind: "audit" | "prospect") {
+  async function trigger(id: string, kind: "audit" | "prospect" | "brief") {
     setBusyId(id);
     setNotice(null);
     try {
       const res = await fetch(`/api/products/${id}/${kind}`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Could not start task.");
-      setNotice(
-        `${kind === "audit" ? "Audit" : "Prospecting"} task started — check the Dashboard for progress.`
-      );
+      const label = kind === "audit" ? "Audit" : kind === "prospect" ? "Prospecting" : "Brief generation";
+      setNotice(`${label} task started — check the Dashboard for progress.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start task.");
     } finally {
@@ -707,6 +706,14 @@ export function ProductsContent() {
                     className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
                   >
                     Audit now
+                  </button>
+                  <button
+                    disabled={busyId === p.id}
+                    onClick={() => trigger(p.id, "brief")}
+                    title="Research this product's actual site and write a problem/audience/positioning brief — including an ideal prospect profile and competitor exclusions — directly into its record, so future prospecting benefits from it."
+                    className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
+                  >
+                    Generate brief
                   </button>
                   <button
                     disabled={busyId === p.id}

@@ -4,6 +4,7 @@ import {
   updateProductGeographicFocus,
   updateProductCampaignPaused,
   updateProductSupplementaryKnowledge,
+  updateProductBrief,
   deleteProduct,
 } from "@/lib/models/products";
 
@@ -22,11 +23,26 @@ export async function PATCH(
     const hasPaused = typeof body?.campaign_paused === "boolean";
     const hasKnowledge = typeof body?.supplementary_knowledge === "string";
 
-    if (!hasNotes && !hasGeo && !hasPaused && !hasKnowledge) {
+    // MILESTONE 6T — a genuine manual override for the brief fields,
+    // explicitly requested to never call the AI: a plain PATCH straight
+    // to updateProductBrief(), the same function "Generate Brief"
+    // itself calls — so a hand-typed brief and an AI-generated one are
+    // indistinguishable to prospecting afterward, at zero API cost for
+    // the manual path.
+    const briefFields = ["problem", "audience", "positioning", "features", "commercial_model", "pricing", "cta"] as const;
+    const briefUpdate: Record<string, string> = {};
+    for (const key of briefFields) {
+      if (typeof body?.[key] === "string") {
+        briefUpdate[key] = body[key];
+      }
+    }
+    const hasBrief = Object.keys(briefUpdate).length > 0;
+
+    if (!hasNotes && !hasGeo && !hasPaused && !hasKnowledge && !hasBrief) {
       return NextResponse.json(
         {
           error:
-            "notes, geographic_focus, campaign_paused, or supplementary_knowledge is required.",
+            "notes, geographic_focus, campaign_paused, supplementary_knowledge, or a brief field is required.",
         },
         { status: 400 }
       );
@@ -47,6 +63,9 @@ export async function PATCH(
         params.id,
         body.supplementary_knowledge
       );
+    }
+    if (hasBrief) {
+      product = await updateProductBrief(params.id, briefUpdate);
     }
 
     return NextResponse.json({ product });

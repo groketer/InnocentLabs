@@ -25,6 +25,8 @@ export function ProductsContent() {
   const [editingKnowledge, setEditingKnowledge] = useState<Record<string, string>>({});
   const [documents, setDocuments] = useState<Record<string, ProductDocument[]>>({});
   const [expandedKnowledge, setExpandedKnowledge] = useState<string | null>(null);
+  const [expandedBrief, setExpandedBrief] = useState<string | null>(null);
+  const [editingBrief, setEditingBrief] = useState<Record<string, Record<string, string>>>({});
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -75,15 +77,20 @@ export function ProductsContent() {
       .catch(() => undefined);
   }, []);
 
-  async function trigger(id: string, kind: "audit" | "prospect" | "brief") {
+  async function trigger(id: string, kind: "audit" | "prospect" | "brief" | "draft-content") {
     setBusyId(id);
     setNotice(null);
     try {
       const res = await fetch(`/api/products/${id}/${kind}`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Could not start task.");
-      const label = kind === "audit" ? "Audit" : kind === "prospect" ? "Prospecting" : "Brief generation";
-      setNotice(`${label} task started — check the Dashboard for progress.`);
+      const labels: Record<typeof kind, string> = {
+        audit: "Audit",
+        prospect: "Prospecting",
+        brief: "Brief generation",
+        "draft-content": "Content drafting",
+      };
+      setNotice(`${labels[kind]} task started — check the Dashboard for progress.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start task.");
     } finally {
@@ -265,6 +272,30 @@ export function ProductsContent() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ supplementary_knowledge: editingKnowledge[id] ?? "" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not save.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // MILESTONE 6T — a genuine manual override for the brief fields,
+  // explicitly requested to never call the AI: this is a plain PATCH,
+  // nothing more — no task, no executor, no API cost. Writes to the
+  // exact same fields "Generate Brief" does, so prospecting sees a
+  // hand-typed brief identically to an AI-generated one.
+  async function saveBrief(id: string) {
+    setBusyId(id);
+    try {
+      const fields = editingBrief[id] ?? {};
+      const res = await fetch(`/api/products/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Could not save.");
@@ -717,6 +748,14 @@ export function ProductsContent() {
                   </button>
                   <button
                     disabled={busyId === p.id}
+                    onClick={() => trigger(p.id, "draft-content")}
+                    title="Draft a LinkedIn post grounded in this product's stored brief. Saved to the approval queue — nothing is ever published without your explicit approval."
+                    className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
+                  >
+                    Draft content
+                  </button>
+                  <button
+                    disabled={busyId === p.id}
                     onClick={() => trigger(p.id, "prospect")}
                     className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-40"
                   >
@@ -739,6 +778,13 @@ export function ProductsContent() {
                     className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300"
                   >
                     {expandedKnowledge === p.id ? "Hide knowledge base" : "Knowledge base"}
+                  </button>
+                  <button
+                    onClick={() => setExpandedBrief(expandedBrief === p.id ? null : p.id)}
+                    title="Write or correct the brief fields directly — no AI call, a plain save. Prospecting reads these exactly the same way whether Generate Brief wrote them or you did."
+                    className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300"
+                  >
+                    {expandedBrief === p.id ? "Hide brief" : "Edit brief"}
                   </button>
                   <button
                     disabled={busyId === p.id}
@@ -828,6 +874,50 @@ export function ProductsContent() {
                       )}
                     </div>
                   </div>
+                </div>
+              )}
+
+              {expandedBrief === p.id && (
+                <div className="mt-3 space-y-3 border-t border-ink-800 pt-3">
+                  <p className="text-[11px] text-white/30">
+                    Write or correct these directly — a plain save, no AI call. Prospecting reads
+                    whatever is here, whether it came from Generate Brief or you.
+                  </p>
+                  {(
+                    [
+                      ["problem", "Problem it solves"],
+                      ["audience", "Audience — who this is actually for, including who is NOT a fit (e.g. competitors)"],
+                      ["positioning", "Positioning"],
+                      ["features", "Features"],
+                      ["commercial_model", "Commercial model"],
+                      ["pricing", "Pricing"],
+                      ["cta", "Call to action"],
+                    ] as const
+                  ).map(([field, label]) => (
+                    <div key={field}>
+                      <label className="text-xs text-white/40">{label}</label>
+                      <textarea
+                        defaultValue={p[field] ?? ""}
+                        onChange={(e) =>
+                          setEditingBrief((prev) => ({
+                            ...prev,
+                            [p.id]: { ...prev[p.id], [field]: e.target.value },
+                          }))
+                        }
+                        rows={field === "features" || field === "audience" ? 3 : 2}
+                        className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-xs text-white outline-none focus:border-emerald-500/50"
+                      />
+                    </div>
+                  ))}
+                  {editingBrief[p.id] && Object.keys(editingBrief[p.id]).length > 0 && (
+                    <button
+                      disabled={busyId === p.id}
+                      onClick={() => saveBrief(p.id)}
+                      className="rounded-md bg-emerald-500 px-3 py-1 text-xs font-medium text-ink-950 disabled:opacity-50"
+                    >
+                      Save brief
+                    </button>
+                  )}
                 </div>
               )}
             </div>

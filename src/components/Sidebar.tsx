@@ -14,6 +14,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Intelligence", href: "/intelligence", enabled: true },
   { label: "Prospects", href: "/prospects", enabled: true },
   { label: "Follow-ups", href: "/follow-ups", enabled: true },
+  { label: "Content", href: "/content", enabled: true },
   { label: "Products", href: "/products", enabled: true },
   { label: "Activity", href: "/activity", enabled: true },
   { label: "Settings", href: "/settings", enabled: true },

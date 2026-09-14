@@ -7,6 +7,7 @@ import { emailCampaignExecutor } from "./executors/emailCampaign";
 import { deepQualificationExecutor } from "./executors/deepQualification";
 import { productStudyExecutor } from "./executors/productStudy";
 import { productBriefExecutor } from "./executors/productBrief";
+import { contentDraftExecutor } from "./executors/contentDraft";
 
 const EXECUTORS: TaskExecutor[] = [
   websiteAuditExecutor,
@@ -16,6 +17,7 @@ const EXECUTORS: TaskExecutor[] = [
   deepQualificationExecutor,
   productStudyExecutor,
   productBriefExecutor,
+  contentDraftExecutor,
 ];
 
 const registry = new Map<string, TaskExecutor>(

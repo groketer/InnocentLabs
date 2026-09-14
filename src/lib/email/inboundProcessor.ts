@@ -160,22 +160,20 @@ async function processOneMessage(
   knownEmails: Set<string>,
   settings: Awaited<ReturnType<typeof getSettings>>
 ): Promise<void> {
-  // 1. Never reply to an auto-responder — the classic bot-loop trap.
-  if (message.isAutoSubmitted) {
-    await recordInboundEmail({
-      user_id: LOCAL_USER_ID,
-      message_id: message.messageId,
-      from_address: message.fromAddress,
-      subject: message.subject,
-      body: message.text,
-      classification: "auto_reply",
-      handled: "skipped",
-      note: "Declared itself an automated response (Auto-Submitted header) — never replied to.",
-    });
-    return;
-  }
+  // MILESTONE 6M — a real, confirmed incident this fixes: bounce
+  // detection used to run AFTER the auto-submitted check, but a DSN
+  // bounce message legitimately (and correctly, per RFC 3834) carries
+  // an Auto-Submitted header of its own — meaning every single genuine
+  // bounce was being caught by check #1 below, classified as a generic
+  // "auto_reply", and skipped before ever reaching bounce handling.
+  // Confirmed directly: 44 recorded "auto_reply" messages, every one of
+  // them actually "Undelivered Mail Returned to Sender" from
+  // mailer-daemon — and zero prospects ever actually marked bounced
+  // despite all of them genuinely bouncing. Bounce detection is more
+  // specific and more actionable than the generic auto-reply catch-all,
+  // so it now runs first, regardless of the Auto-Submitted header.
 
-  // 2. Bounce handling.
+  // 1. Bounce handling — checked first, see above.
   if (looksLikeBounce({ fromAddress: message.fromAddress, subject: message.subject, text: message.text })) {
     const bouncedAddress = extractBouncedAddress(message.text, knownEmails);
     const prospect = bouncedAddress
@@ -207,6 +205,24 @@ async function processOneMessage(
       note: prospect
         ? `Matched to ${prospect.name}.`
         : "Could not confidently match this bounce to a known prospect.",
+    });
+    return;
+  }
+
+  // 2. Never reply to an auto-responder — the classic bot-loop trap.
+  // Runs after bounce detection specifically, since a bounce is a more
+  // specific, more actionable classification of an automated message —
+  // see the comment at the top of this function.
+  if (message.isAutoSubmitted) {
+    await recordInboundEmail({
+      user_id: LOCAL_USER_ID,
+      message_id: message.messageId,
+      from_address: message.fromAddress,
+      subject: message.subject,
+      body: message.text,
+      classification: "auto_reply",
+      handled: "skipped",
+      note: "Declared itself an automated response (Auto-Submitted header) — never replied to.",
     });
     return;
   }

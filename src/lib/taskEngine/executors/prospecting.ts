@@ -191,6 +191,10 @@ interface ProspectCandidate {
 
   country?: string;
 
+  competitor_check?: string;
+
+  audience_fit_check?: string;
+
   fit_reason?: string;
 
   opportunity_signal?: string;
@@ -293,6 +297,29 @@ const ProspectCandidateSchema = z.object({
     .optional()
     .describe(
       "The country this prospect is actually based in, when it can be determined from real evidence (their website, address, phone country code, etc.) — used to send at a reasonable local time, not guessed if genuinely unclear."
+    ),
+
+  // MILESTONE 6N — the cheap, high-leverage fix for the accuracy request
+  // this responds to. Rather than a second, separate verification call
+  // (real extra cost, exactly what the request wants to avoid), these
+  // two fields are REQUIRED as part of the same single call — Zod
+  // validation rejects output missing them, so the model has to
+  // genuinely reason through both checks explicitly, per candidate,
+  // before it can produce valid output at all. A bare fit_reason lets a
+  // half-considered "seems relevant" slip through; a required, named
+  // field for "why isn't this a competitor" and "how does this match
+  // the actual audience" does not. Marginal cost: a few dozen tokens
+  // per candidate against an already much larger call.
+  competitor_check: z
+    .string()
+    .describe(
+      "Explicitly state why this candidate is NOT a competitor — i.e. does not itself sell a product/service that does roughly the same job, to roughly the same buyer, as the target product. If this candidate does sell something like that, they must be excluded — do not include them and skip writing this candidate."
+    ),
+
+  audience_fit_check: z
+    .string()
+    .describe(
+      "Explicitly state how this specific candidate matches the product's actual described audience (or, if the product's audience is genuinely unclear, matches individuals experiencing the specific problem this product solves) — not merely that they are a generally successful or visible person. If they do not genuinely match, exclude them."
     ),
 
   fit_reason: z.string(),
@@ -2111,6 +2138,29 @@ function normalizeCandidate(
     return null;
   }
 
+  // MILESTONE 6N — same "reject if empty" pattern as fitReason above.
+  // Zod's z.string() alone only guarantees the field exists as a
+  // string — it does not stop a model from trivially satisfying it
+  // with "" or whitespace, which would defeat the entire point of
+  // requiring genuine, explicit reasoning here.
+  const competitorCheck =
+    typeof candidate.competitor_check === "string"
+      ? cleanText(candidate.competitor_check)
+      : "";
+
+  if (!competitorCheck) {
+    return null;
+  }
+
+  const audienceFitCheck =
+    typeof candidate.audience_fit_check === "string"
+      ? cleanText(candidate.audience_fit_check)
+      : "";
+
+  if (!audienceFitCheck) {
+    return null;
+  }
+
   const opportunitySignal =
     typeof candidate.opportunity_signal ===
       "string"
@@ -2249,6 +2299,12 @@ function normalizeCandidate(
 
     country:
       candidate.country,
+
+    competitor_check:
+      competitorCheck,
+
+    audience_fit_check:
+      audienceFitCheck,
 
     fit_reason:
       fitReason,
@@ -2912,7 +2968,7 @@ Do not return explanatory prose outside the JSON object.
                 authoritativeProductId,
 
               fit_reason:
-                candidate.fit_reason,
+                `${candidate.fit_reason} | Competitor check: ${candidate.competitor_check} | Audience fit: ${candidate.audience_fit_check}`,
 
               opportunity_signal:
                 candidate.opportunity_signal,

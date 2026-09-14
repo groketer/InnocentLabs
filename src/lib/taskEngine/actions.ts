@@ -228,16 +228,24 @@ export async function cancelTask(id: string, userId: string): Promise<AgentTask>
  * Anything still QUEUED/RUNNING must be cancelled first — deleting an
  * active task out from under itself (rather than cancelling it) risks
  * a subtask update writing to a row that no longer exists partway
- * through. COMPLETED/FAILED tasks are left alone here too, since those
- * are real historical records someone may still want, not something to
- * offer blanket deletion for.
+ * through. COMPLETED/COMPLETED_WITH_ISSUES tasks are left alone here,
+ * since those are real historical records someone may still want, not
+ * something to offer blanket deletion for.
+ *
+ * MILESTONE 6I — extended to also allow FAILED, per direct request: a
+ * failed task clutters the task list the same way a cancelled one
+ * does, and there's no more reason to force someone to keep it around
+ * than a cancelled one. Still deliberately excludes
+ * COMPLETED/COMPLETED_WITH_ISSUES — those remain real historical
+ * records of actual work done, not something to offer blanket deletion
+ * for.
  */
 export async function deleteTask(id: string, userId: string): Promise<void> {
   const task = await requireOwnedTask(id, userId);
 
-  if (task.status !== "CANCELLED") {
+  if (task.status !== "CANCELLED" && task.status !== "FAILED") {
     throw new TaskActionError(
-      `Only a cancelled task can be deleted (this one is ${task.status}).`
+      `Only a cancelled or failed task can be deleted (this one is ${task.status}).`
     );
   }
 

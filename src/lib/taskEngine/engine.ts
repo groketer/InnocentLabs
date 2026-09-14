@@ -437,13 +437,27 @@ async function runSubtaskStep(parent: AgentTask, subtask: AgentTask): Promise<vo
   // with a subtask showing COMPLETED underneath it. Re-checking the
   // current status first respects a cancellation that happened while
   // this was running, rather than blindly overwriting it.
+  //
+  // MILESTONE 6H — CORRECTION: this only handled CANCELLED specifically,
+  // but the same stale-result problem has a second, confirmed cause —
+  // "Unexpected engine error: Invalid task transition: QUEUED →
+  // RETRYING". recoverInterruptedTasks() runs on every cold start and
+  // unconditionally resets any subtask still RUNNING back to QUEUED,
+  // assuming the previous instance is fully dead. If that old instance
+  // is instead still finishing this exact step and then tries to write
+  // its result here, it finds QUEUED instead of RUNNING and the
+  // transition legitimately fails. Generalized from "is it CANCELLED"
+  // to "is it still RUNNING at all" — any status change out from under
+  // this call means a newer process has already taken ownership, and
+  // this now-stale result should be logged and discarded, not forced
+  // through a transition that's no longer valid.
   const currentSubtaskState = await getTaskById(subtask.id);
-  if (currentSubtaskState?.status === "CANCELLED") {
+  if (currentSubtaskState && currentSubtaskState.status !== "RUNNING") {
     await logActivity({
       user_id: parent.user_id,
       task_id: subtask.id,
       event_type: "SUBTASK_COMPLETED",
-      message: `${subtask.title}: finished after being cancelled — this operation was already in progress and could not be stopped mid-flight. ${result.summary}`,
+      message: `${subtask.title}: finished after its status changed to ${currentSubtaskState.status} elsewhere (likely a cold-start recovery reclaiming this step) — this result arrived too late to apply and was discarded rather than forced through an invalid transition. ${result.summary}`,
     });
     return;
   }

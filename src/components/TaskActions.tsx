@@ -52,7 +52,7 @@ export function TaskActions({ task, onChanged }: Props) {
     {
       action: "delete",
       label: "Delete",
-      show: task.status === "CANCELLED",
+      show: task.status === "CANCELLED" || task.status === "FAILED",
     },
   ];
 

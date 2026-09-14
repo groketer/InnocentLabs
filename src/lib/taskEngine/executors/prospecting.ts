@@ -949,7 +949,27 @@ observation with ${product.url} as its source, exactly like any other
 evidence — do not present it as if it came from the stored product
 record above.`
     : ""
-}`;
+}
+${
+  isThin
+    ? `
+AUDIENCE DEFAULT WHEN STILL GENUINELY UNCLEAR:
+
+Most of this portfolio is aimed at individuals looking for a solution to
+a problem they personally have — not companies as institutional buyers.
+If, even after visiting the product's own site, its target audience is
+still genuinely unclear, default to individuals experiencing the
+specific problem this product solves, NOT company leadership,
+executives, or organizations as an institution. Only target
+organizations/executives when the product's own positioning is
+unambiguously B2B — a real institutional buying process, a company-level
+problem, enterprise pricing — not merely because "a founder" or "a CEO"
+is a person who could theoretically use it.`
+    : ""
+}
+MANDATORY AUDIENCE-FIT CHECK — before including any candidate:
+
+Before including any prospect, explicitly check: does ${product.audience ? "the stated audience above" : "what you observed about who this product is actually for"} describe THIS specific candidate, or are they simply someone who is generally successful, senior, or visible enough to be easy to find? A well-known CEO of an unrelated company is not automatically a better prospect than a less prominent individual who is genuinely the actual described audience. If the candidate does not match the actual described audience, exclude them — regardless of how credible or easy-to-justify they otherwise look.`;
 }
 
 /* -------------------------------------------------------------------------- */

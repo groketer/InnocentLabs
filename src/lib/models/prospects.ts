@@ -1157,6 +1157,7 @@ export async function listProspectsDueForOutreach(
 
   const db = await getDb();
   const nowIso = new Date().toISOString();
+  const cappedLimit = Math.min(Math.max(Math.floor(limit), 1), 200);
 
   // MILESTONE 6E — CORRECTION to the Product Focus audit's first
   // attempt at this: fetching a larger pool and filtering by product in
@@ -1176,7 +1177,21 @@ export async function listProspectsDueForOutreach(
       ? "AND (prospects.sequence_status != 'not_started' OR prospects.product_id = ANY(@focus_product_ids))"
       : "";
 
-  const result = await db.execute({
+  // MILESTONE 6J — a real, confirmed incident this fixes: the previous
+  // single query ordered active (follow-up) prospects strictly before
+  // not_started (first-contact) ones with no floor at all. Confirmed
+  // directly against real send data: 18 emails sent in a day, all 18
+  // follow-ups, zero first contacts — any day with enough due follow-ups
+  // to fill the whole batch on its own silently starves out every new
+  // prospect, indefinitely, no matter how long they've been waiting.
+  // Fixed by reserving a guaranteed floor (half of the batch) for new
+  // contacts specifically, fetched first — any slots that floor doesn't
+  // use (because fewer new prospects exist than the floor) flow to
+  // follow-ups instead, so neither group can fully starve the other and
+  // no capacity goes to waste either way.
+  const newContactFloor = Math.ceil(cappedLimit / 2);
+
+  const newContactsResult = await db.execute({
     sql: `
       SELECT prospects.*
       FROM prospects
@@ -1188,28 +1203,89 @@ export async function listProspectsDueForOutreach(
         AND (products.approval_status IS NULL OR products.approval_status = 'approved')
         AND (
           prospects.sequence_status = 'not_started'
-          OR (prospects.sequence_status = 'active' AND prospects.next_send_at IS NOT NULL AND prospects.next_send_at <= @now)
           OR (@include_pending_approval AND prospects.sequence_status = 'pending_approval')
         )
         ${focusClause}
-      ORDER BY
-        CASE WHEN prospects.sequence_status = 'active' THEN 0 ELSE 1 END,
-        prospects.next_send_at ASC NULLS FIRST,
-        prospects.created_at ASC
+      ORDER BY prospects.created_at ASC
       LIMIT @limit
     `,
     args: {
       user_id: normalizedUserId,
       now: nowIso,
-      limit: Math.min(Math.max(Math.floor(limit), 1), 200),
+      limit: newContactFloor,
       include_pending_approval: includePendingApproval,
       ...(focusProductIds && focusProductIds.length > 0 ? { focus_product_ids: focusProductIds } : {}),
     },
   });
 
-  return (result.rows as unknown as Array<Record<string, unknown>>).map(
-    mapProspectRow
-  );
+  const newContacts = (newContactsResult.rows as unknown as Array<Record<string, unknown>>).map(mapProspectRow);
+  const remainingCapacity = cappedLimit - newContacts.length;
+
+  let followUps: Prospect[] = [];
+  if (remainingCapacity > 0) {
+    const followUpsResult = await db.execute({
+      sql: `
+        SELECT prospects.*
+        FROM prospects
+        LEFT JOIN products ON products.id = prospects.product_id
+        WHERE prospects.user_id = @user_id
+          AND prospects.qualification_status = 'qualified'
+          AND prospects.email IS NOT NULL
+          AND (products.campaign_paused IS NULL OR products.campaign_paused = false)
+          AND (products.approval_status IS NULL OR products.approval_status = 'approved')
+          AND prospects.sequence_status = 'active'
+          AND prospects.next_send_at IS NOT NULL
+          AND prospects.next_send_at <= @now
+        ORDER BY prospects.next_send_at ASC NULLS FIRST, prospects.created_at ASC
+        LIMIT @limit
+      `,
+      args: {
+        user_id: normalizedUserId,
+        now: nowIso,
+        limit: remainingCapacity,
+      },
+    });
+    followUps = (followUpsResult.rows as unknown as Array<Record<string, unknown>>).map(mapProspectRow);
+  }
+
+  // If the new-contact floor went unused (fewer new prospects exist than
+  // the floor) AND follow-ups also didn't fill the remaining capacity,
+  // top up with any additional new contacts beyond the floor rather than
+  // leaving a batch under-filled when more genuinely exist.
+  let extraNewContacts: Prospect[] = [];
+  const stillUnused = cappedLimit - newContacts.length - followUps.length;
+  if (stillUnused > 0) {
+    const extraResult = await db.execute({
+      sql: `
+        SELECT prospects.*
+        FROM prospects
+        LEFT JOIN products ON products.id = prospects.product_id
+        WHERE prospects.user_id = @user_id
+          AND prospects.qualification_status = 'qualified'
+          AND prospects.email IS NOT NULL
+          AND (products.campaign_paused IS NULL OR products.campaign_paused = false)
+          AND (products.approval_status IS NULL OR products.approval_status = 'approved')
+          AND (
+            prospects.sequence_status = 'not_started'
+            OR (@include_pending_approval AND prospects.sequence_status = 'pending_approval')
+          )
+          ${focusClause}
+        ORDER BY prospects.created_at ASC
+        LIMIT @limit OFFSET @offset
+      `,
+      args: {
+        user_id: normalizedUserId,
+        now: nowIso,
+        limit: stillUnused,
+        offset: newContacts.length,
+        include_pending_approval: includePendingApproval,
+        ...(focusProductIds && focusProductIds.length > 0 ? { focus_product_ids: focusProductIds } : {}),
+      },
+    });
+    extraNewContacts = (extraResult.rows as unknown as Array<Record<string, unknown>>).map(mapProspectRow);
+  }
+
+  return [...newContacts, ...followUps, ...extraNewContacts];
 }
 
 /**

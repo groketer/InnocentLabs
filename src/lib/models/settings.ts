@@ -111,7 +111,15 @@ export interface AppSettings {
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  max_follow_ups: 3,
+  /**
+   * MILESTONE 6K — the actual number that matters here is TOTAL emails
+   * sent (1 initial + this many follow-ups), not follow-ups alone —
+   * confirmed as a genuine point of confusion by a direct request for
+   * "3 emails total, then stop" landing on this exact setting already
+   * being at 3, which in practice sends 4 (1 + 3). Lowered to 2 so the
+   * total is genuinely 3, matching what was actually asked for.
+   */
+  max_follow_ups: 2,
   min_days_between_follow_ups: 3,
   daily_send_limit: 50,
   require_manual_approval: false,

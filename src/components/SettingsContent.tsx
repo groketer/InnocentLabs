@@ -325,6 +325,11 @@ export function SettingsContent() {
               }
               className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
             />
+            <span className="mt-1 block text-[11px] text-white/30">
+              Follow-ups AFTER the initial email — total emails sent per prospect is this number
+              plus 1. Set to {settings.max_follow_ups} means {settings.max_follow_ups + 1} emails
+              total before the sequence stops and waits for a reply.
+            </span>
           </label>
 
           <label className="block">

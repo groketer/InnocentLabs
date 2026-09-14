@@ -112,17 +112,38 @@ escalate rather than guessing which part takes priority.
 OUTPUT FORMAT
 ==================================================
 
+Every response, regardless of action, must include "reply_interest" —
+your honest classification of what THIS incoming message actually is,
+separate from how you're choosing to handle it:
+
+- "genuine_interest": the sender is actually expressing real interest in
+  the product — asking about it, wanting to learn more, moving toward a
+  next step.
+- "not_interested": a decline, a "no thanks," or similar — they've read
+  it and aren't interested.
+- "reverse_pitch": the sender is using this reply to pitch THEIR OWN
+  product or service back at you, rather than responding to what was
+  actually offered — this is not real interest in your product, even
+  though it's a genuine, on-topic-sounding reply.
+- "other": anything else — a question unrelated to buying, a logistics
+  note, genuinely unclear intent, etc.
+
+Do not let the action you're taking bias this — an escalated message or
+an unsubscribe request can still legitimately be "genuine_interest" if
+the underlying sentiment was positive before the specific trigger (e.g.
+someone interested but asking a pricing question you must escalate).
+
 Respond with ONLY a JSON object, no markdown fences, no extra commentary:
 
-{"action": "reply", "subject": "...", "body": "..."}
+{"action": "reply", "reply_interest": "...", "subject": "...", "body": "..."}
 
 or
 
-{"action": "unsubscribe", "acknowledgment": "a short, warm one-to-two sentence confirmation that they won't hear from us again"}
+{"action": "unsubscribe", "reply_interest": "...", "acknowledgment": "a short, warm one-to-two sentence confirmation that they won't hear from us again"}
 
 or
 
-{"action": "escalate", "reason": "one sentence explaining why, for Innocent to read"}
+{"action": "escalate", "reply_interest": "...", "reason": "one sentence explaining why, for Innocent to read"}
 
 DO NOT INCLUDE a signature, sign-off name, postal address, or unsubscribe
 text in "body" — those are appended automatically.
@@ -143,10 +164,12 @@ export interface ComposeReplyInput {
   inboundText: string;
 }
 
+export type ReplyInterest = "genuine_interest" | "not_interested" | "reverse_pitch" | "other";
+
 export type ComposeReplyResult =
-  | { action: "reply"; subject: string; body: string }
-  | { action: "unsubscribe"; acknowledgment: string }
-  | { action: "escalate"; reason: string };
+  | { action: "reply"; reply_interest: ReplyInterest; subject: string; body: string }
+  | { action: "unsubscribe"; reply_interest: ReplyInterest; acknowledgment: string }
+  | { action: "escalate"; reply_interest: ReplyInterest; reason: string };
 
 function buildUserPrompt(input: ComposeReplyInput): string {
   const { prospect, product, history, inboundSubject, inboundText } = input;
@@ -205,18 +228,23 @@ function parseResult(raw: string): ComposeReplyResult {
 
   const obj = parsed as Record<string, unknown>;
 
+  const VALID_INTERESTS: ReplyInterest[] = ["genuine_interest", "not_interested", "reverse_pitch", "other"];
+  const replyInterest: ReplyInterest = VALID_INTERESTS.includes(obj.reply_interest as ReplyInterest)
+    ? (obj.reply_interest as ReplyInterest)
+    : "other";
+
   if (obj.action === "escalate") {
     if (typeof obj.reason !== "string" || !obj.reason.trim()) {
       throw new Error('Escalation output missing a "reason".');
     }
-    return { action: "escalate", reason: obj.reason.trim() };
+    return { action: "escalate", reply_interest: replyInterest, reason: obj.reason.trim() };
   }
 
   if (obj.action === "unsubscribe") {
     if (typeof obj.acknowledgment !== "string" || !obj.acknowledgment.trim()) {
       throw new Error('Unsubscribe output missing an "acknowledgment".');
     }
-    return { action: "unsubscribe", acknowledgment: obj.acknowledgment.trim() };
+    return { action: "unsubscribe", reply_interest: replyInterest, acknowledgment: obj.acknowledgment.trim() };
   }
 
   if (obj.action === "reply") {
@@ -226,7 +254,7 @@ function parseResult(raw: string): ComposeReplyResult {
     if (!obj.subject.trim() || !obj.body.trim()) {
       throw new Error("Reply composer returned an empty subject or body.");
     }
-    return { action: "reply", subject: obj.subject.trim(), body: obj.body.trim() };
+    return { action: "reply", reply_interest: replyInterest, subject: obj.subject.trim(), body: obj.body.trim() };
   }
 
   throw new Error(`Reply composer returned an unrecognized action: ${String(obj.action)}`);

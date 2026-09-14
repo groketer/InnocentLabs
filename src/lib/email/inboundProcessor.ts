@@ -343,6 +343,7 @@ async function processOneMessage(
       classification: "reply",
       handled: "escalated",
       note: decision.reason,
+      reply_interest: decision.reply_interest,
     });
     return;
   }
@@ -394,6 +395,7 @@ async function processOneMessage(
       classification: "reply",
       handled: "replied",
       note: "Unsubscribe request detected and processed automatically.",
+      reply_interest: decision.reply_interest,
     });
 
     await logActivity({
@@ -425,6 +427,7 @@ async function processOneMessage(
       classification: "reply",
       handled: "escalated",
       note: reason,
+      reply_interest: decision.reply_interest,
     });
     return;
   }
@@ -461,6 +464,7 @@ async function processOneMessage(
     classification: "reply",
     handled: sendResult.success ? "replied" : "escalated",
     note: sendResult.success ? undefined : sendResult.errorMessage,
+    reply_interest: decision.reply_interest,
   });
 
   if (sendResult.success) {

@@ -59,6 +59,7 @@ export async function recordInboundEmail(input: {
   classification: InboundClassification;
   handled: InboundHandled;
   note?: string | null;
+  reply_interest?: string | null;
 }): Promise<InboundEmail | null> {
   const db = await getDb();
   const id = randomUUID();
@@ -68,10 +69,10 @@ export async function recordInboundEmail(input: {
       sql: `
         INSERT INTO inbound_emails (
           id, user_id, prospect_id, message_id, from_address, subject,
-          body, classification, handled, note
+          body, classification, handled, note, reply_interest
         ) VALUES (
           @id, @user_id, @prospect_id, @message_id, @from_address, @subject,
-          @body, @classification, @handled, @note
+          @body, @classification, @handled, @note, @reply_interest
         )
       `,
       args: {
@@ -85,6 +86,7 @@ export async function recordInboundEmail(input: {
         classification: input.classification,
         handled: input.handled,
         note: input.note ?? null,
+        reply_interest: input.reply_interest ?? null,
       },
     });
   } catch (error) {

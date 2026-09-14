@@ -925,6 +925,26 @@ async function runMigrations(db: Db): Promise<void> {
   }
 
   /*
+   * MILESTONE 6Q — a real, confirmed gap this fixes: the existing
+   * "reply" classification only ever meant "a real person replied,
+   * not a bounce or auto-responder" — it said nothing about whether
+   * the reply was actually a genuine expression of interest. Confirmed
+   * directly: two separate replies counted as positive market signal
+   * turned out, on the owner's own ground-truth review, to be neither
+   * — one was the owner testing the system, the other was a reverse
+   * pitch (someone selling back to the sender), not real interest.
+   * Without this distinction, a traction report meant to inform a real
+   * business decision could keep being misleading in exactly the same
+   * way. Nullable — only ever set for classification = 'reply' rows,
+   * via the same AI call that already decides how to respond, so this
+   * costs nothing extra to capture.
+   */
+  const inboundEmailsColumns = await existingColumns("inbound_emails");
+  if (!inboundEmailsColumns.has("reply_interest")) {
+    await db.execute(`ALTER TABLE inbound_emails ADD COLUMN reply_interest TEXT`);
+  }
+
+  /*
    * MILESTONE 3U — product knowledge base.
    *
    * Two complementary ways to give the agent context beyond what it can

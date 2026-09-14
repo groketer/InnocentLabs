@@ -816,6 +816,81 @@ async function runMigrations(db: Db): Promise<void> {
   );
 
   /*
+   * MILESTONE 6R — Organic content drafting.
+   *
+   * A separate table rather than reusing agent_tasks, since this needs
+   * its own approval workflow (a draft sitting for review is a very
+   * different lifecycle than a task's plan/run/complete steps) and its
+   * own persisted content, platform, and eventual publish reference —
+   * folding this into agent_tasks would mean overloading fields that
+   * mean something else there. Deliberately approval-gated from day
+   * one, per explicit request: a draft is generated, but nothing is
+   * ever published without an explicit approval action first.
+   */
+  await db.batch(
+    [
+      {
+        sql: `CREATE TABLE IF NOT EXISTS content_drafts (
+          id             TEXT PRIMARY KEY,
+          user_id        TEXT NOT NULL,
+          product_id     TEXT REFERENCES products(id),
+          platform       TEXT NOT NULL,
+          content        TEXT NOT NULL,
+          status         TEXT NOT NULL DEFAULT 'pending_approval',
+          source_task_id TEXT REFERENCES agent_tasks(id),
+          grounding_note TEXT,
+          external_post_id TEXT,
+          error_message  TEXT,
+          created_at     TEXT NOT NULL DEFAULT (${NOW_ISO_SQL}),
+          updated_at     TEXT NOT NULL DEFAULT (${NOW_ISO_SQL}),
+          published_at   TEXT
+        )`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_content_drafts_status
+          ON content_drafts(user_id, status)`,
+      },
+      {
+        sql: `CREATE INDEX IF NOT EXISTS idx_content_drafts_product
+          ON content_drafts(product_id)`,
+      },
+    ],
+    "write"
+  );
+
+  /*
+   * MILESTONE 6S — LinkedIn OAuth connection.
+   *
+   * Deliberately a separate, small table rather than folded into the
+   * general settings store — settings.ts's API already returns its
+   * whole object freely to the frontend, and an access token has no
+   * business riding along in that same response body. Single-row in
+   * practice (one connection, one user), storing the token, the
+   * connected profile's URN (needed as the "author" on every publish
+   * call), and an expiry so a real OAuth token refresh can be added
+   * later without a schema change.
+   */
+  await db.batch(
+    [
+      {
+        sql: `CREATE TABLE IF NOT EXISTS linkedin_connection (
+          id             TEXT PRIMARY KEY,
+          user_id        TEXT NOT NULL,
+          access_token   TEXT NOT NULL,
+          person_urn     TEXT NOT NULL,
+          expires_at     TEXT,
+          connected_at   TEXT NOT NULL DEFAULT (${NOW_ISO_SQL})
+        )`,
+      },
+      {
+        sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_linkedin_connection_user
+          ON linkedin_connection(user_id)`,
+      },
+    ],
+    "write"
+  );
+
+  /*
    * MILESTONE 3H — Duplicate prospects.
    *
    * A duplicate prospect (same user, same product, same email) was

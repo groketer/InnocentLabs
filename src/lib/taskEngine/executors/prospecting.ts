@@ -2440,8 +2440,13 @@ export const prospectingExecutor:
         task
       );
 
-    const portfolioRefresh =
+    // MILESTONE 6P — gated behind a real setting now, per direct
+    // request — this call was previously unconditional every single
+    // time, and was a major, confirmed cost driver on its own.
+    const portfolioRefreshSettings = await getSettings();
+    if (portfolioRefreshSettings.autonomous_portfolio_refresh) {
       await refreshLivePortfolio();
+    }
 
     /* ---------------------------------------------------------------------- */
     /* Authoritative product identification                                   */

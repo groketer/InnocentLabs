@@ -25,6 +25,17 @@ export interface AppSettings {
   require_manual_approval: boolean;
   /** When true, the daily scheduler creates prospecting tasks on its own, with no prompting. */
   autonomous_prospecting: boolean;
+
+  /**
+   * MILESTONE 6P — a direct, explicit request: refreshLivePortfolio()
+   * was being called unconditionally on every single prospecting
+   * planning step, with no setting gating it at all — confirmed as a
+   * major, real cost driver (236 calls, $1.16 in a single day, from
+   * this one function alone). Defaults to false so the freeze this was
+   * built for takes effect immediately, without requiring a separate
+   * UI step first.
+   */
+  autonomous_portfolio_refresh: boolean;
   /** When true, the daily scheduler creates outreach-sending tasks on its own, with no prompting. */
   autonomous_campaigns: boolean;
   /**
@@ -124,6 +135,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   daily_send_limit: 50,
   require_manual_approval: false,
   autonomous_prospecting: true,
+  autonomous_portfolio_refresh: false,
   autonomous_campaigns: true,
   autonomous_qualification: true,
   auto_qualify_confidence_threshold: 0.4,
@@ -149,6 +161,7 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
   "autonomous_replies",
   "agent_paused",
   "autonomous_product_study",
+  "autonomous_portfolio_refresh",
 ]);
 
 // MILESTONE 5V — focus_product_ids (an array) and focus_expires_at (a
@@ -211,6 +224,7 @@ export interface UpdateSettingsInput {
   daily_send_limit?: number;
   require_manual_approval?: boolean;
   autonomous_prospecting?: boolean;
+  autonomous_portfolio_refresh?: boolean;
   autonomous_campaigns?: boolean;
   autonomous_qualification?: boolean;
   auto_qualify_confidence_threshold?: number;

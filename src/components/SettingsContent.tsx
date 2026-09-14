@@ -167,6 +167,32 @@ export function SettingsContent() {
           manually, for any specific product, any time, from the Products page.
         </p>
 
+        {/* MILESTONE 6P — direct request: freeze the automatic check
+            for newly listed products on the marketplace. Confirmed as
+            a real, meaningful cost driver on its own — separate from
+            the prospecting toggle above, since this ran unconditionally
+            on every planning step regardless of that setting. */}
+        <label className="mt-4 flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={settings.autonomous_portfolio_refresh}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                autonomous_portfolio_refresh: e.target.checked,
+              })
+            }
+            className="h-4 w-4 rounded border-ink-600 bg-ink-800"
+          />
+          <span className="text-sm text-white/70">
+            Auto-check innocent.co.ke for newly listed products
+          </span>
+        </label>
+        <p className="ml-6 mt-1 text-[11px] text-white/30">
+          When on, every prospecting run also checks the marketplace for new or changed product
+          listings — a real, separate source of API cost on its own. Off by default.
+        </p>
+
         <label className="mt-3 flex items-center gap-2">
           <input
             type="checkbox"

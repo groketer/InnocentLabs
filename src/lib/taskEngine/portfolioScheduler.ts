@@ -31,6 +31,7 @@
 import { getDb } from "@/lib/db";
 import { createTask } from "@/lib/models/tasks";
 import { logActivity } from "@/lib/models/activity";
+import { getSettings } from "@/lib/models/settings";
 
 const SCHEDULER_INTERVAL_MS =
   15 * 60 * 1000;
@@ -157,8 +158,25 @@ async function createDailyRefreshTask(
  * Ensures today's portfolio refresh task exists. Safe to call repeatedly —
  * hasRefreshTaskToday() makes this idempotent within a given day, whether
  * it's invoked by the local interval loop or the Vercel daily cron route.
+ *
+ * MILESTONE 6X — a real, confirmed gap in the earlier autonomous_portfolio_
+ * refresh fix: that fix only gated the refreshLivePortfolio() call inside
+ * prospecting's own planSubtasks() — this scheduler is a completely
+ * separate, independent mechanism that was never touched by it, and ran
+ * unconditionally once a day regardless of the setting. This is what
+ * directly explains a deleted product reappearing on its own: this task
+ * visits the live, external marketplace and re-discovers anything still
+ * actually listed there — including a product genuinely deleted from this
+ * app's own database, since deleting it here does nothing to the real,
+ * external listing itself.
  */
 export async function ensureDailyPortfolioRefresh(): Promise<void> {
+  const settings = await getSettings();
+
+  if (!settings.autonomous_portfolio_refresh) {
+    return;
+  }
+
   const userId =
     await getCurrentUserId();
 

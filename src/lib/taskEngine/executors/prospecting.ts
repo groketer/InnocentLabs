@@ -2100,7 +2100,7 @@ function isValidEmailSyntax(
  *
  * Contactability is enforced here before persistence.
  */
-function normalizeCandidate(
+export function normalizeCandidate(
   candidate: Record<string, unknown>
 ): ProspectCandidate | null {
   if (
@@ -2179,28 +2179,27 @@ function normalizeCandidate(
     return null;
   }
 
-  // MILESTONE 6N — same "reject if empty" pattern as fitReason above.
-  // Zod's z.string() alone only guarantees the field exists as a
-  // string — it does not stop a model from trivially satisfying it
-  // with "" or whitespace, which would defeat the entire point of
-  // requiring genuine, explicit reasoning here.
+  // MILESTONE 7G — the actual, confirmed cause of a real incident:
+  // since MILESTONE 7A, the real enforcement against competitors and
+  // audience mismatches happens through is_competitor/is_audience_fit
+  // below, not this text — these strings are now just human-readable
+  // explanation. Confirmed directly, with real production data: the
+  // model reliably provides everything else (name, evidence, the
+  // boolean flags, email) but consistently omits just these two
+  // specific explanatory fields, and requiring them non-empty was
+  // silently rejecting every single candidate for a real product,
+  // every round, burning tokens with nothing to show for it. No
+  // longer blocking — missing explanation text falls back to a plain
+  // placeholder rather than discarding an otherwise valid candidate.
   const competitorCheck =
-    typeof candidate.competitor_check === "string"
+    (typeof candidate.competitor_check === "string"
       ? cleanText(candidate.competitor_check)
-      : "";
-
-  if (!competitorCheck) {
-    return null;
-  }
+      : "") || "No explanation provided.";
 
   const audienceFitCheck =
-    typeof candidate.audience_fit_check === "string"
+    (typeof candidate.audience_fit_check === "string"
       ? cleanText(candidate.audience_fit_check)
-      : "";
-
-  if (!audienceFitCheck) {
-    return null;
-  }
+      : "") || "No explanation provided.";
 
   // MILESTONE 7A — the actual enforcement this was missing entirely.
   // Confirmed directly: 8 of 10 "qualified" prospects for one real

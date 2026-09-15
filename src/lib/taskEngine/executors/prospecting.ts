@@ -215,7 +215,7 @@ interface ProspectCandidate {
 }
 
 interface ProspectingOutput {
-  prospects: ProspectCandidate[];
+  prospects: Record<string, unknown>[];
 
   search_objective?: string;
 
@@ -371,8 +371,22 @@ const ProspectingOutputSchema = z.object({
   evidence_gaps:
     z.array(z.string()).optional(),
 
+  // MILESTONE 7B — the actual, direct cause of a real, confirmed
+  // regression: every single prospecting run failing with "Invalid
+  // prospecting JSON output," burning real tokens and delivering
+  // nothing. z.array(ProspectCandidateSchema) here validated the whole
+  // array atomically — one malformed candidate (a missing or mistyped
+  // is_competitor/is_audience_fit, which this executor's webSearchTool
+  // + no-outputType setup makes more likely than strict structured
+  // output would) failed the ENTIRE batch, even when every other
+  // candidate in it was perfectly valid. Loosened to a permissive
+  // record here specifically so this top-level parse can never fail on
+  // a single candidate's shape — normalizeCandidate() below already
+  // does real, careful per-candidate validation and gracefully
+  // discards anything malformed one at a time, exactly as it should;
+  // it just never got the chance to run before this fix.
   prospects: z.array(
-    ProspectCandidateSchema
+    z.record(z.string(), z.unknown())
   ),
 });
 
@@ -2087,7 +2101,7 @@ function isValidEmailSyntax(
  * Contactability is enforced here before persistence.
  */
 function normalizeCandidate(
-  candidate: ProspectCandidate
+  candidate: Record<string, unknown>
 ): ProspectCandidate | null {
   if (
     !candidate ||
@@ -2343,7 +2357,9 @@ function normalizeCandidate(
       publicProfileUrl,
 
     country:
-      candidate.country,
+      typeof candidate.country === "string"
+        ? cleanText(candidate.country) || undefined
+        : undefined,
 
     competitor_check:
       competitorCheck,

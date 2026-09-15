@@ -1073,8 +1073,42 @@ export async function approveProduct(id: string): Promise<Product> {
 export async function deleteProduct(id: string): Promise<void> {
   const db = await getDb();
 
+  // MILESTONE 6U — a real, confirmed incident this fixes: deleting a
+  // product failed with a foreign key violation on agent_questions —
+  // but that table was just the first one hit; agent_suggestions and
+  // content_drafts have the exact same unhandled reference and would
+  // have failed the same way on the next attempt. Both have no
+  // standalone meaning once the product they're about no longer
+  // exists, so they're deleted alongside it.
+  //
+  // prospects is different, deliberately: a prospect is a real person
+  // with real send/reply history, not something to silently delete
+  // just because their product record was removed. The existing null-
+  // out of product_id was already correct but incomplete — without
+  // also updating sequence_status, a prospect could be left with no
+  // product but a still-"active"-looking status, technically eligible
+  // for the outreach query to pick up despite having nothing valid to
+  // send about. needs_product already exists as exactly this
+  // situation's status (a prospect whose product needs reassignment),
+  // and is already excluded from automatic outreach and already has
+  // Follow-ups UI support for reassigning them to a different product.
   await db.execute({
-    sql: `UPDATE prospects SET product_id = NULL WHERE product_id = ?`,
+    sql: `DELETE FROM agent_questions WHERE product_id = ?`,
+    args: [id],
+  });
+
+  await db.execute({
+    sql: `DELETE FROM agent_suggestions WHERE product_id = ?`,
+    args: [id],
+  });
+
+  await db.execute({
+    sql: `DELETE FROM content_drafts WHERE product_id = ?`,
+    args: [id],
+  });
+
+  await db.execute({
+    sql: `UPDATE prospects SET product_id = NULL, sequence_status = 'needs_product', next_send_at = NULL WHERE product_id = ?`,
     args: [id],
   });
 

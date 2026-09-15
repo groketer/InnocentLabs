@@ -717,78 +717,55 @@ export async function upsertDiscoveredPortfolioProduct(input: {
 
   const existing = await getProductByName(name);
 
-  if (existing) {
-    await db.execute({
-      sql: `
-        UPDATE products
-        SET
-          url = @url,
-          category = COALESCE(@category, category),
-          description = COALESCE(@description, description),
-          status = COALESCE(@status, status),
-          notes = COALESCE(@notes, notes),
-          updated_at = ${NOW_ISO_SQL}
-        WHERE id = @id
-      `,
-      args: {
-        id: existing.id,
-        url,
-        category:
-          input.category?.trim() || null,
-        description:
-          input.description?.trim() || null,
-        status:
-          input.status ?? null,
-        notes:
-          input.notes?.trim() || null,
-      },
-    });
-  } else {
-    await db.execute({
-      sql: `
-        INSERT INTO products (
-          id,
-          name,
-          url,
-          status,
-          asset_type,
-          category,
-          description,
-          notes,
-          approval_status
-        )
-        VALUES (
-          @id,
-          @name,
-          @url,
-          @status,
-          'product',
-          @category,
-          @description,
-          @notes,
-          'pending'
-        )
-      `,
-      args: {
-        id: randomUUID(),
-        name,
-        url,
-        status: input.status ?? "active",
-        category:
-          input.category?.trim() || "unknown",
-        description:
-          input.description?.trim() || null,
-        notes:
-          input.notes?.trim() || null,
-      },
-    });
+  // MILESTONE 6Y — the actual, root fix for a real, repeated incident:
+  // a settings-based gate on the two callers of this function was
+  // correctly deployed and confirmed working, but a task already
+  // queued from before that fix existed could still run and call this
+  // function regardless — the gate stopped new automatic discovery
+  // from being scheduled, but did nothing about a stale task already
+  // in flight. Per direct, explicit request, this function is now
+  // structurally incapable of creating a new product at all, no matter
+  // what triggers it, now or in the future — only an update to an
+  // already-existing product (matched by name) is possible here.
+  // Manual entry via the Products page is the only way a new product
+  // gets created from here on.
+  if (!existing) {
+    throw new Error(
+      `"${name}" does not match an existing product — automatic creation of new products is disabled. Add it manually from the Products page if it should be tracked.`
+    );
   }
+
+  await db.execute({
+    sql: `
+      UPDATE products
+      SET
+        url = @url,
+        category = COALESCE(@category, category),
+        description = COALESCE(@description, description),
+        status = COALESCE(@status, status),
+        notes = COALESCE(@notes, notes),
+        updated_at = ${NOW_ISO_SQL}
+      WHERE id = @id
+    `,
+    args: {
+      id: existing.id,
+      url,
+      category:
+        input.category?.trim() || null,
+      description:
+        input.description?.trim() || null,
+      status:
+        input.status ?? null,
+      notes:
+        input.notes?.trim() || null,
+    },
+  });
 
   const product = await getProductByName(name);
 
   if (!product) {
     throw new Error(
-      `Portfolio product "${name}" was written but could not be retrieved afterward.`
+      `Portfolio product "${name}" was updated but could not be retrieved afterward.`
     );
   }
 

@@ -2958,18 +2958,51 @@ Do not return explanatory prose outside the JSON object.
       // competitors/non-fits (the new enforcement doing its job), or
       // did the model propose few or no candidates at all (a
       // different situation with a different fix)?
+      // MILESTONE 7F — expanded per direct follow-up: the previous
+      // breakdown only distinguished the two newest checks from
+      // "everything else" lumped together, which the real incident
+      // showed was insufficient — every rejection fell into "other,"
+      // leaving the actual cause just as unclear as before. This
+      // checks every individual reason normalizeCandidate() can
+      // reject a candidate for, using the exact same validation
+      // helpers it does, so the count for each is precisely accurate
+      // rather than inferred.
       const rejectionBreakdown = {
+        missing_or_invalid_name: structuredOutput.prospects.filter(
+          (c) => typeof c.name !== "string" || !c.name.trim()
+        ).length,
+        invalid_prospect_type: structuredOutput.prospects.filter(
+          (c) => typeof c.prospect_type !== "string" || !isValidProspectType(c.prospect_type)
+        ).length,
+        no_valid_http_evidence: structuredOutput.prospects.filter((c) => {
+          const rawEvidence = Array.isArray(c.evidence) ? c.evidence : [];
+          const valid = rawEvidence
+            .map((item) => normalizeEvidence(item))
+            .filter((item) => item !== null);
+          return valid.length === 0;
+        }).length,
+        missing_fit_reason: structuredOutput.prospects.filter(
+          (c) => typeof c.fit_reason !== "string" || !cleanText(c.fit_reason)
+        ).length,
+        missing_competitor_check_text: structuredOutput.prospects.filter(
+          (c) => typeof c.competitor_check !== "string" || !cleanText(c.competitor_check)
+        ).length,
+        missing_audience_fit_check_text: structuredOutput.prospects.filter(
+          (c) => typeof c.audience_fit_check !== "string" || !cleanText(c.audience_fit_check)
+        ).length,
         flagged_as_competitor: structuredOutput.prospects.filter(
           (c) => c.is_competitor === true
         ).length,
         flagged_as_audience_non_fit: structuredOutput.prospects.filter(
           (c) => c.is_audience_fit === false
         ).length,
-        rejected_for_other_reasons:
-          structuredOutput.prospects.length -
-          candidates.length -
-          structuredOutput.prospects.filter((c) => c.is_competitor === true).length -
-          structuredOutput.prospects.filter((c) => c.is_audience_fit === false).length,
+        missing_opportunity_signal: structuredOutput.prospects.filter(
+          (c) => typeof c.opportunity_signal !== "string" || !cleanText(c.opportunity_signal)
+        ).length,
+        missing_or_invalid_email: structuredOutput.prospects.filter((c) => {
+          const email = typeof c.email === "string" ? c.email.trim().toLowerCase() : "";
+          return !email || !isValidEmailSyntax(email);
+        }).length,
       };
 
       /* -------------------------------------------------------------------- */

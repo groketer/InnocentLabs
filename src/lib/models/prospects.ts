@@ -171,6 +171,19 @@ export interface CreateProspectInput {
   evidence?: ProspectEvidence[];
   confidence?: number;
   unknowns?: string[];
+
+  /**
+   * MILESTONE 7E — a deliberate, narrow, opt-in bypass of the HTTP(S)
+   * evidence-source requirement below, added specifically for the CSV
+   * import path per direct request. Defaults to false/undefined, so
+   * this changes nothing about the AI prospecting path's evidence
+   * standard — that guard exists specifically to catch hallucinated
+   * "evidence" with no real source, which is a genuine risk for AI
+   * output and not one for a human directly typing in their own,
+   * already-known contacts. Only ever set true by the manual import
+   * route.
+   */
+  allow_missing_evidence_source?: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -610,7 +623,7 @@ export async function createProspect(
     input.evidence ?? []
   );
 
-  if (evidence.length === 0) {
+  if (evidence.length === 0 && !input.allow_missing_evidence_source) {
     throw new Error(
       "A prospect must contain at least one valid HTTP(S) evidence item."
     );

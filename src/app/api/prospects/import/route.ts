@@ -13,14 +13,19 @@ const VALID_QUALIFICATIONS = new Set<string>(["candidate", "needs_review", "qual
 
 /**
  * Expected columns (case-insensitive, extra columns ignored):
- * name, email, product_name, source_url — required
+ * name, email, product_name — required
  * organization, role, prospect_type, qualification_status, fit_reason,
- * opportunity_signal — optional
+ * opportunity_signal, source_url — optional
  *
- * source_url is required and must be a real http(s) URL — every prospect
- * needs at least one verifiable source, the same standard the AI itself
- * is held to when it discovers someone on its own; a manual import
- * doesn't get a lower bar just because a human typed it in instead.
+ * MILESTONE 7E — source_url made optional per direct request: it was
+ * previously required and strictly validated, which meant a realistic
+ * CSV export (name/email/company, no "source URL" column — not a
+ * typical field in most prospect lists) failed on every single row.
+ * When provided, it's still used as the evidence source, same as
+ * before. When it's missing, the import proceeds honestly — the
+ * evidence records that this was manually imported without a
+ * verified source, rather than fabricating one or blocking the import
+ * entirely.
  *
  * This deliberately mirrors what the CSV export produces, so an exported
  * file can be edited and re-imported (e.g. after restoring from a backup,
@@ -56,19 +61,11 @@ export async function POST(req: NextRequest) {
       const name = get("name");
       const email = get("email");
       const productName = get("product_name");
-      const sourceUrl = get("source_url");
+      const sourceUrlRaw = get("source_url");
+      const hasValidSourceUrl = /^https?:\/\//i.test(sourceUrlRaw);
 
       if (!name || !email || !productName) {
         skipped.push({ row: i + 2, reason: "Missing required name, email, or product_name." });
-        continue;
-      }
-
-      if (!sourceUrl || !/^https?:\/\//i.test(sourceUrl)) {
-        skipped.push({
-          row: i + 2,
-          reason:
-            "Missing or invalid source_url — every prospect needs a real, verifiable source (e.g. their LinkedIn profile or company page), the same standard the AI itself is held to.",
-        });
         continue;
       }
 
@@ -110,13 +107,16 @@ export async function POST(req: NextRequest) {
           fit_reason: get("fit_reason") || "Manually imported by Innocent.",
           opportunity_signal:
             get("opportunity_signal") || "Manually identified and imported by Innocent.",
-          evidence: [
-            {
-              observation: `Manually imported by Innocent from ${sourceUrl}.`,
-              source: sourceUrl,
-              observed_at: new Date().toISOString(),
-            },
-          ],
+          evidence: hasValidSourceUrl
+            ? [
+                {
+                  observation: `Manually imported by Innocent from ${sourceUrlRaw}.`,
+                  source: sourceUrlRaw,
+                  observed_at: new Date().toISOString(),
+                },
+              ]
+            : [],
+          allow_missing_evidence_source: !hasValidSourceUrl,
           unknowns: [],
         });
         existingEmails.add(email.toLowerCase());

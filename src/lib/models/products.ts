@@ -419,7 +419,32 @@ export async function syncAuthoritativePortfolio(): Promise<void> {
 /**
  * Initializes/reconciles the manually supplied bootstrap portfolio.
  */
+/**
+ * MILESTONE 6Z — the actual, final root cause of a repeated, confirmed
+ * incident: this function's name has always promised an "if empty"
+ * check that never existed in the code — it unconditionally called
+ * syncAuthoritativePortfolio() every single time, which itself
+ * unconditionally re-inserts every product in the hardcoded
+ * AUTHORITATIVE_PORTFOLIO list via ON CONFLICT DO UPDATE, regardless of
+ * whether it had been deliberately deleted. This function runs from
+ * instrumentation.ts on every server cold start — frequent on Vercel —
+ * which is what was actually undoing every product deletion this whole
+ * time, completely independent of the three earlier fixes this
+ * session, none of which touched this code path at all. Now the
+ * function actually does what its name has always claimed: seed the
+ * authoritative portfolio only when the table is genuinely empty (a
+ * fresh, first-ever deployment), never touching it again afterward.
+ */
 export async function seedProductsIfEmpty(): Promise<void> {
+  const db = await getDb();
+
+  const existing = await db.execute(`SELECT COUNT(*) as c FROM products`);
+  const count = Number((existing.rows[0] as unknown as { c: number | string }).c);
+
+  if (count > 0) {
+    return;
+  }
+
   await syncAuthoritativePortfolio();
 }
 

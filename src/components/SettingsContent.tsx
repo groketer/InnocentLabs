@@ -33,8 +33,6 @@ function StatusPill({ ok }: { ok: boolean }) {
 export function SettingsContent() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [infra, setInfra] = useState<InfraStatus | null>(null);
-  const [linkedinStatus, setLinkedinStatus] = useState<{ connected: boolean; personUrn: string | null; expiresAt: string | null } | null>(null);
-  const [linkedinNotice, setLinkedinNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -54,32 +52,6 @@ export function SettingsContent() {
 
   useEffect(() => {
     load();
-  }, []);
-
-  async function loadLinkedinStatus() {
-    try {
-      const res = await fetch("/api/auth/linkedin/status");
-      const data = await res.json();
-      if (res.ok) setLinkedinStatus(data);
-    } catch {
-      // non-critical — the connect card just shows "not connected"
-    }
-  }
-
-  useEffect(() => {
-    loadLinkedinStatus();
-
-    // MILESTONE 6S — the OAuth callback redirects back here with a
-    // query param rather than anything more stateful, since this app
-    // has no session system to carry a flash message through.
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("linkedin_connected") === "1") {
-      setLinkedinNotice("LinkedIn connected.");
-      window.history.replaceState({}, "", window.location.pathname);
-    } else if (params.get("linkedin_error")) {
-      setLinkedinNotice(`Could not connect LinkedIn: ${params.get("linkedin_error")}`);
-      window.history.replaceState({}, "", window.location.pathname);
-    }
   }, []);
 
   async function save() {
@@ -549,40 +521,6 @@ export function SettingsContent() {
               )}
             </div>
           )}
-        </div>
-      </div>
-
-      <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">
-        <h2 className="text-sm font-semibold text-white">Connections</h2>
-        <p className="mt-1 text-xs text-white/40">
-          Required before any content draft can actually be published, rather than just approved
-          and stuck waiting.
-        </p>
-
-        {linkedinNotice && (
-          <p className="mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
-            {linkedinNotice}
-          </p>
-        )}
-
-        <div className="mt-4 flex items-center justify-between text-sm">
-          <div>
-            <span className="text-white/70">LinkedIn</span>
-            {linkedinStatus?.connected && (
-              <p className="mt-1 text-[11px] text-white/30">
-                Connected{linkedinStatus.expiresAt ? ` — expires ${new Date(linkedinStatus.expiresAt).toLocaleDateString()}` : ""}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusPill ok={!!linkedinStatus?.connected} />
-            <a
-              href="/api/auth/linkedin/connect"
-              className="rounded-md border border-ink-600 px-2.5 py-1 text-xs text-white/60 transition-colors hover:border-emerald-500/40 hover:text-emerald-300"
-            >
-              {linkedinStatus?.connected ? "Reconnect" : "Connect"}
-            </a>
-          </div>
         </div>
       </div>
     </div>

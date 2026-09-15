@@ -2951,6 +2951,27 @@ Do not return explanatory prose outside the JSON object.
             MAX_PROSPECTS_PER_ROUND
           );
 
+      // MILESTONE 7C — a safe, purely additive diagnostic, deliberately
+      // NOT touching normalizeCandidate() itself to avoid any risk of
+      // another regression there. Answers the exact question this
+      // incident raised directly: were raw candidates flagged as
+      // competitors/non-fits (the new enforcement doing its job), or
+      // did the model propose few or no candidates at all (a
+      // different situation with a different fix)?
+      const rejectionBreakdown = {
+        flagged_as_competitor: structuredOutput.prospects.filter(
+          (c) => c.is_competitor === true
+        ).length,
+        flagged_as_audience_non_fit: structuredOutput.prospects.filter(
+          (c) => c.is_audience_fit === false
+        ).length,
+        rejected_for_other_reasons:
+          structuredOutput.prospects.length -
+          candidates.length -
+          structuredOutput.prospects.filter((c) => c.is_competitor === true).length -
+          structuredOutput.prospects.filter((c) => c.is_audience_fit === false).length,
+      };
+
       /* -------------------------------------------------------------------- */
       /* Persistence                                                           */
       /* -------------------------------------------------------------------- */
@@ -3136,6 +3157,20 @@ Do not return explanatory prose outside the JSON object.
 
           prospects_found:
             candidates.length,
+
+          // MILESTONE 7C — the actual missing diagnostic: without this,
+          // "zero candidates" is ambiguous between "the model proposed
+          // nothing at all" and "the model proposed some, and they all
+          // got filtered out" (by the competitor/audience-fit
+          // enforcement, or any other normalization check) — two very
+          // different situations that need different responses, and
+          // this was the exact ambiguity that made a real incident
+          // harder to diagnose than it needed to be.
+          raw_candidates_before_filtering:
+            structuredOutput.prospects.length,
+
+          rejection_breakdown:
+            rejectionBreakdown,
 
           prospects_persisted:
             persisted.length,

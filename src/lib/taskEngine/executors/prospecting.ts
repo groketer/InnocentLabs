@@ -193,7 +193,11 @@ interface ProspectCandidate {
 
   competitor_check?: string;
 
+  is_competitor?: boolean;
+
   audience_fit_check?: string;
+
+  is_audience_fit?: boolean;
 
   fit_reason?: string;
 
@@ -310,16 +314,39 @@ const ProspectCandidateSchema = z.object({
   // field for "why isn't this a competitor" and "how does this match
   // the actual audience" does not. Marginal cost: a few dozen tokens
   // per candidate against an already much larger call.
+  // MILESTONE 7A — the actual missing piece, found via real, confirmed
+  // evidence: 8 of 10 "qualified" prospects for one product turned out
+  // to be direct competitors (other course creators in the exact same
+  // niche), despite this exact field already existing. The gap: a free
+  // -text reasoning field gives the model somewhere to write its
+  // reasoning, but nothing in the code ever actually reads that text to
+  // reject a candidate — the model was relied on to self-exclude
+  // competitors purely from the prompt instruction, with no code-level
+  // backstop if it didn't. Restructured into an explicit boolean the
+  // code can actually check and enforce, with the reasoning kept
+  // alongside it for a human to read, not for the code to parse.
+  is_competitor: z
+    .boolean()
+    .describe(
+      "true if this candidate itself sells a product/service that does roughly the same job, to roughly the same buyer, as the target product — i.e. they are a competitor, not a prospect. false otherwise."
+    ),
+
   competitor_check: z
     .string()
     .describe(
-      "Explicitly state why this candidate is NOT a competitor — i.e. does not itself sell a product/service that does roughly the same job, to roughly the same buyer, as the target product. If this candidate does sell something like that, they must be excluded — do not include them and skip writing this candidate."
+      "One sentence explaining the is_competitor determination above — what this candidate actually sells or does, and why that does or doesn't make them a competitor."
+    ),
+
+  is_audience_fit: z
+    .boolean()
+    .describe(
+      "true if this specific candidate genuinely matches the product's actual described audience (or, if the product's audience is genuinely unclear, matches individuals experiencing the specific problem this product solves) — not merely that they are a generally successful or visible person. false otherwise."
     ),
 
   audience_fit_check: z
     .string()
     .describe(
-      "Explicitly state how this specific candidate matches the product's actual described audience (or, if the product's audience is genuinely unclear, matches individuals experiencing the specific problem this product solves) — not merely that they are a generally successful or visible person. If they do not genuinely match, exclude them."
+      "One sentence explaining the is_audience_fit determination above."
     ),
 
   fit_reason: z.string(),
@@ -2158,6 +2185,24 @@ function normalizeCandidate(
       : "";
 
   if (!audienceFitCheck) {
+    return null;
+  }
+
+  // MILESTONE 7A — the actual enforcement this was missing entirely.
+  // Confirmed directly: 8 of 10 "qualified" prospects for one real
+  // product were obvious competitors, despite the model already being
+  // required to write out competitor/audience reasoning — because
+  // nothing ever checked that reasoning against anything. This does.
+  // A candidate the model's own structured output flags as a
+  // competitor, or as not genuinely matching the audience, is rejected
+  // here regardless of anything else about them — no exceptions, no
+  // relying on the model to have also skipped writing them in the
+  // first place.
+  if (candidate.is_competitor === true) {
+    return null;
+  }
+
+  if (candidate.is_audience_fit === false) {
     return null;
   }
 

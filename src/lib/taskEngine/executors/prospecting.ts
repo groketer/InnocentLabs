@@ -1035,6 +1035,45 @@ problem, enterprise pricing — not merely because "a founder" or "a CEO"
 is a person who could theoretically use it.`
     : ""
 }
+${
+  product.require_individual_prospects
+    ? `
+INDIVIDUALS-ONLY SEARCH STRATEGY — HARD DIRECTIVE FOR THIS PRODUCT:
+
+This product is restricted to individual prospects only. Any organization
+or company candidate will be automatically rejected regardless of what
+you write about it, so do not spend search effort on companies at all.
+
+More importantly, your SEARCH STRATEGY itself needs to change, not just
+your filtering. Generic web search for this kind of audience tends to
+surface companies and platforms that SELL help to this audience — which
+are competitors, not prospects. Instead, actively search the specific
+places where real individuals post publicly about their own situation:
+
+- Reddit communities where people post about their own circumstances:
+  r/jobs, r/personalfinance, r/povertyfinance, r/sidehustle,
+  r/WorkOnline, r/beermoney, r/financialindependence — searching for
+  people describing their own need, not businesses posting to these
+  communities.
+- LinkedIn "#opentowork" posts and comments — individuals who have
+  marked themselves as actively job-seeking, in their own words.
+- Job-board forums and comment sections (Indeed, Glassdoor) where
+  individuals discuss their own job search, not the listings themselves.
+- Facebook groups explicitly for job seekers or side-hustle seekers,
+  where members post about their own need.
+- Quora questions asked BY someone in this situation ("how do I make
+  money right now," "I need a job urgently") — the asker is a prospect;
+  someone answering by promoting their own service is not.
+
+The test for every candidate found this way: is this a real person
+describing THEIR OWN need, in their own words, in a public post? If
+what you found is a company's marketing content, a job-board's own
+listing page, or another platform's promotional post, that is not
+sufficient — keep searching until you find an actual individual's own
+public statement about their own situation, with genuine, verifiable
+contact information.`
+    : ""
+}
 MANDATORY AUDIENCE-FIT CHECK — before including any candidate:
 
 Before including any prospect, explicitly check: does ${product.audience ? "the stated audience above" : "what you observed about who this product is actually for"} describe THIS specific candidate, or are they simply someone who is generally successful, senior, or visible enough to be easy to find? A well-known CEO of an unrelated company is not automatically a better prospect than a less prominent individual who is genuinely the actual described audience. If the candidate does not match the actual described audience, exclude them — regardless of how credible or easy-to-justify they otherwise look.`;

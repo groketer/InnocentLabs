@@ -1071,7 +1071,44 @@ what you found is a company's marketing content, a job-board's own
 listing page, or another platform's promotional post, that is not
 sufficient — keep searching until you find an actual individual's own
 public statement about their own situation, with genuine, verifiable
-contact information.`
+contact information.
+
+CONTACT INFORMATION — THIS IS WHERE MOST PROSPECTING ON THIS PRODUCT
+ACTUALLY FAILS, SO READ THIS CAREFULLY:
+
+Most individuals on Reddit or LinkedIn do NOT display an email address
+anywhere in their post or profile — contact on those platforms normally
+happens through the platform's own messaging, not email. This means the
+person you just found being an excellent fit is not automatically
+someone you can include: you also need a genuinely, directly observed
+email for them specifically, not a plausible-looking one.
+
+Do NOT invent, infer, or guess an email address under any circumstance
+— not from a name, not from a common provider pattern, not because it
+seems like a reasonable thing this person would have. If you cannot
+find this specific person's actual email, stated or shown somewhere
+you can point to, DO NOT include them as a prospect. Skip them and
+keep searching for a different individual whose contact information
+you CAN genuinely find. A smaller number of real, contactable prospects
+is the correct outcome — not a larger number where some are guesses.
+
+Real emails for this kind of prospect are genuinely findable, just not
+usually on the platform where you first noticed them. Places worth
+checking once you've identified someone as a strong candidate:
+- Their own personal website, blog, or portfolio, if they have one,
+  often on a "Contact" or "About" page.
+- Freelance platform profiles (Upwork, Fiverr, Contra) — these
+  sometimes list a public contact email directly.
+- A forum post or comment where the person explicitly invites contact
+  ("email me at ___ for freelance work," "reach me at ___") — the
+  email appearing in their own words is exactly what makes it genuine.
+- A GitHub profile "About" section, for anyone with any technical or
+  online-work orientation.
+- A posted resume or CV that includes contact information.
+
+If none of these turn up a real, directly observed email for this
+specific person, they are not a usable prospect for this product right
+now, however good a fit they otherwise seem. Move on to someone else.`
     : ""
 }
 MANDATORY AUDIENCE-FIT CHECK — before including any candidate:
@@ -2301,18 +2338,22 @@ export function normalizeCandidate(
     return null;
   }
 
-  // MILESTONE 8E — corrected per direct feedback on the first version
-  // of this check: exempting personal providers (Gmail, Yahoo, etc.)
-  // meant skipping scrutiny on exactly the category most individual
-  // prospects actually use, once a product is restricted to
-  // individuals — the majority of the real candidate pool got zero
-  // verification. The domain-only check was also weak on its own
-  // merits: "gmail.com" appearing somewhere proves nothing, since
-  // millions of unrelated people share that domain. What actually
-  // matters, for any email regardless of provider, is whether the
-  // specific address itself — not just its domain — appears anywhere
-  // in this candidate's own evidence. No exemptions: applied
-  // identically to every candidate.
+  // MILESTONE 8G — re-instated after being removed in 8F, on direct
+  // instruction: no compromise on fabricated emails, full stop. 8F's
+  // rollback wasn't wrong about the immediate cause (0 prospects across
+  // 4 rounds) but the actual root cause was upstream of this check —
+  // the search guidance pointed at Reddit and LinkedIn, platforms that
+  // mostly don't expose email at all, leaving the model nothing to
+  // find but a guess. That guidance has been rewritten (see
+  // buildProductContext's "CONTACT INFORMATION" section) to explicitly
+  // steer toward sources where a real email is actually discoverable,
+  // and to instruct the model to skip a candidate entirely rather than
+  // invent one. This check is the structural backstop for that
+  // instruction, exactly like the competitor and audience-fit checks —
+  // a skipped or fabricated email is exactly as unacceptable as a
+  // missed competitor flag, and gets the same fail-closed treatment:
+  // the literal address must appear in this candidate's own evidence,
+  // no exemptions by provider or prospect type.
   const hasEmailEvidenceTrail = evidence.some(
     (item) =>
       item.source.toLowerCase().includes(email) ||
@@ -3089,11 +3130,11 @@ Do not return explanatory prose outside the JSON object.
         rejected_as_organization_individuals_only: product.require_individual_prospects
           ? structuredOutput.prospects.filter((c) => c.prospect_type !== "person").length
           : 0,
-        // MILESTONE 8D — a business-domain email with no trail
-        // connecting it to anything this candidate's own evidence
-        // actually observed. Personal providers (gmail, yahoo, etc.)
-        // are excluded, since there's nothing domain-specific to
-        // verify there.
+        // MILESTONE 8G — re-instated alongside the check itself.
+        // Watch this specifically if volume is low again: a high
+        // number here means the search guidance still isn't reliably
+        // steering toward genuinely contactable people, not that the
+        // check itself is wrong.
         rejected_email_no_evidence_trail: structuredOutput.prospects.filter((c) => {
           const email = typeof c.email === "string" ? c.email.trim().toLowerCase() : "";
           if (!email || !isValidEmailSyntax(email)) return false; // already counted above

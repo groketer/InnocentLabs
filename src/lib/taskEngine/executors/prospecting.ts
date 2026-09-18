@@ -2301,6 +2301,27 @@ export function normalizeCandidate(
     return null;
   }
 
+  // MILESTONE 8E — corrected per direct feedback on the first version
+  // of this check: exempting personal providers (Gmail, Yahoo, etc.)
+  // meant skipping scrutiny on exactly the category most individual
+  // prospects actually use, once a product is restricted to
+  // individuals — the majority of the real candidate pool got zero
+  // verification. The domain-only check was also weak on its own
+  // merits: "gmail.com" appearing somewhere proves nothing, since
+  // millions of unrelated people share that domain. What actually
+  // matters, for any email regardless of provider, is whether the
+  // specific address itself — not just its domain — appears anywhere
+  // in this candidate's own evidence. No exemptions: applied
+  // identically to every candidate.
+  const hasEmailEvidenceTrail = evidence.some(
+    (item) =>
+      item.source.toLowerCase().includes(email) ||
+      item.observation.toLowerCase().includes(email)
+  );
+  if (!hasEmailEvidenceTrail) {
+    return null;
+  }
+
   const confidence =
     typeof candidate.confidence ===
         "number" &&
@@ -3068,6 +3089,25 @@ Do not return explanatory prose outside the JSON object.
         rejected_as_organization_individuals_only: product.require_individual_prospects
           ? structuredOutput.prospects.filter((c) => c.prospect_type !== "person").length
           : 0,
+        // MILESTONE 8D — a business-domain email with no trail
+        // connecting it to anything this candidate's own evidence
+        // actually observed. Personal providers (gmail, yahoo, etc.)
+        // are excluded, since there's nothing domain-specific to
+        // verify there.
+        rejected_email_no_evidence_trail: structuredOutput.prospects.filter((c) => {
+          const email = typeof c.email === "string" ? c.email.trim().toLowerCase() : "";
+          if (!email || !isValidEmailSyntax(email)) return false; // already counted above
+          const rawEvidence = Array.isArray(c.evidence) ? c.evidence : [];
+          const hasTrail = rawEvidence.some((item: unknown) => {
+            const normalized = normalizeEvidence(item);
+            if (!normalized) return false;
+            return (
+              normalized.source.toLowerCase().includes(email) ||
+              normalized.observation.toLowerCase().includes(email)
+            );
+          });
+          return !hasTrail;
+        }).length,
       };
 
       /* -------------------------------------------------------------------- */

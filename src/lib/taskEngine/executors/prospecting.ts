@@ -2245,16 +2245,23 @@ export function normalizeCandidate(
   // product were obvious competitors, despite the model already being
   // required to write out competitor/audience reasoning — because
   // nothing ever checked that reasoning against anything. This does.
-  // A candidate the model's own structured output flags as a
-  // competitor, or as not genuinely matching the audience, is rejected
-  // here regardless of anything else about them — no exceptions, no
-  // relying on the model to have also skipped writing them in the
-  // first place.
-  if (candidate.is_competitor === true) {
+  // MILESTONE 8C — the actual bug behind a real, confirmed incident: a
+  // company selling a directly competing course got through despite
+  // this check, because the model had skipped the reasoning step
+  // entirely for that candidate (both explanation fields came back
+  // empty). "=== true" only rejects an EXPLICIT competitor flag —
+  // candidate.is_competitor being undefined (reasoning skipped, not
+  // performed) evaluated to false here and sailed through as if
+  // confirmed safe. That's fail-open: missing reasoning treated as
+  // "fine." Flipped to fail-closed — anything not explicitly confirmed
+  // NOT a competitor gets rejected, same as an explicit competitor
+  // flag. A skipped reasoning step is exactly as dangerous as a wrong
+  // answer, and should be treated that way, not treated as a pass.
+  if (candidate.is_competitor !== false) {
     return null;
   }
 
-  if (candidate.is_audience_fit === false) {
+  if (candidate.is_audience_fit !== true) {
     return null;
   }
 
@@ -3039,11 +3046,15 @@ Do not return explanatory prose outside the JSON object.
         missing_audience_fit_check_text: structuredOutput.prospects.filter(
           (c) => typeof c.audience_fit_check !== "string" || !cleanText(c.audience_fit_check)
         ).length,
-        flagged_as_competitor: structuredOutput.prospects.filter(
-          (c) => c.is_competitor === true
+        // MILESTONE 8C — renamed and corrected to match the actual,
+        // now fail-closed enforcement: catches both an explicit
+        // competitor flag AND a candidate where the model skipped this
+        // reasoning entirely (previously miscounted as "other").
+        rejected_as_competitor_or_unreasoned: structuredOutput.prospects.filter(
+          (c) => c.is_competitor !== false
         ).length,
-        flagged_as_audience_non_fit: structuredOutput.prospects.filter(
-          (c) => c.is_audience_fit === false
+        rejected_as_audience_non_fit_or_unreasoned: structuredOutput.prospects.filter(
+          (c) => c.is_audience_fit !== true
         ).length,
         missing_opportunity_signal: structuredOutput.prospects.filter(
           (c) => typeof c.opportunity_signal !== "string" || !cleanText(c.opportunity_signal)

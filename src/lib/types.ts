@@ -151,6 +151,7 @@ export interface Product {
   campaign_paused: boolean;
   supplementary_knowledge: string | null;
   approval_status: "pending" | "approved";
+  require_individual_prospects: boolean;
   last_audited_at: string | null;
   created_at: string;
   updated_at: string;

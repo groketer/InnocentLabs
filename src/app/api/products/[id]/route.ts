@@ -5,6 +5,7 @@ import {
   updateProductCampaignPaused,
   updateProductSupplementaryKnowledge,
   updateProductBrief,
+  updateProductRequireIndividualProspects,
   deleteProduct,
 } from "@/lib/models/products";
 
@@ -22,6 +23,7 @@ export async function PATCH(
     const hasGeo = typeof body?.geographic_focus === "string";
     const hasPaused = typeof body?.campaign_paused === "boolean";
     const hasKnowledge = typeof body?.supplementary_knowledge === "string";
+    const hasRequireIndividuals = typeof body?.require_individual_prospects === "boolean";
 
     // MILESTONE 6T — a genuine manual override for the brief fields,
     // explicitly requested to never call the AI: a plain PATCH straight
@@ -38,11 +40,11 @@ export async function PATCH(
     }
     const hasBrief = Object.keys(briefUpdate).length > 0;
 
-    if (!hasNotes && !hasGeo && !hasPaused && !hasKnowledge && !hasBrief) {
+    if (!hasNotes && !hasGeo && !hasPaused && !hasKnowledge && !hasBrief && !hasRequireIndividuals) {
       return NextResponse.json(
         {
           error:
-            "notes, geographic_focus, campaign_paused, supplementary_knowledge, or a brief field is required.",
+            "notes, geographic_focus, campaign_paused, supplementary_knowledge, require_individual_prospects, or a brief field is required.",
         },
         { status: 400 }
       );
@@ -67,6 +69,12 @@ export async function PATCH(
     if (hasBrief) {
       product = await updateProductBrief(params.id, briefUpdate);
     }
+    if (hasRequireIndividuals) {
+      product = await updateProductRequireIndividualProspects(
+        params.id,
+        body.require_individual_prospects
+      );
+    }
 
     return NextResponse.json({ product });
   } catch (error) {
@@ -77,6 +85,7 @@ export async function PATCH(
     return NextResponse.json({ error: message }, { status });
   }
 }
+
 
 export async function DELETE(
   _req: NextRequest,

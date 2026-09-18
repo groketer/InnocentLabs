@@ -1063,6 +1063,23 @@ async function runMigrations(db: Db): Promise<void> {
     );
   }
 
+  /*
+   * MILESTONE 8A — a real, structural per-product constraint, added
+   * after soft text instructions (the audience field, competitor_check
+   * reasoning) proved unreliable at actually excluding competitors on
+   * two separate, confirmed occasions this session. prospect_type is
+   * already a required, code-validated field on every candidate — far
+   * more reliably filled correctly than a model's own self-assessment
+   * of "am I a competitor." When this flag is set for a product,
+   * prospecting hard-rejects any candidate that isn't prospect_type
+   * "person," rather than hoping the audience description is followed.
+   */
+  if (!productsColumns.has("require_individual_prospects")) {
+    await db.execute(
+      `ALTER TABLE products ADD COLUMN require_individual_prospects BOOLEAN NOT NULL DEFAULT false`
+    );
+  }
+
   await db.batch(
     [
       {

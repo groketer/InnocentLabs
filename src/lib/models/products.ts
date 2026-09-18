@@ -882,6 +882,46 @@ export async function updateProductCampaignPaused(
   return product;
 }
 
+/**
+ * MILESTONE 8A — a real, structural per-product constraint. When set,
+ * prospecting hard-rejects any candidate that isn't prospect_type
+ * "person" for this product, rather than relying on the audience
+ * description alone — which proved unreliable at excluding companies
+ * and competitors on its own, twice, this session.
+ */
+export async function updateProductRequireIndividualProspects(
+  id: string,
+  requireIndividuals: boolean
+): Promise<Product> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      UPDATE products
+      SET require_individual_prospects = @requireIndividuals, updated_at = ${NOW_ISO_SQL}
+      WHERE id = @id
+    `,
+    args: { id, requireIndividuals },
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Product not found.");
+  }
+
+  const result2 = await db.execute({
+    sql: `SELECT * FROM products WHERE id = ?`,
+    args: [id],
+  });
+
+  const product = result2.rows[0] as unknown as Product | undefined;
+
+  if (!product) {
+    throw new Error("Product was updated but could not be retrieved afterward.");
+  }
+
+  return product;
+}
+
 
 /**
  * MILESTONE 3O — geographic targeting per product.

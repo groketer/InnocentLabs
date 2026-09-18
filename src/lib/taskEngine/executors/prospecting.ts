@@ -2933,7 +2933,7 @@ Do not return explanatory prose outside the JSON object.
       /* Candidate normalization                                               */
       /* -------------------------------------------------------------------- */
 
-      const candidates =
+      const normalizedCandidates =
         structuredOutput
           .prospects
           .map(
@@ -2949,6 +2949,17 @@ Do not return explanatory prose outside the JSON object.
             0,
             MAX_PROSPECTS_PER_ROUND
           );
+
+      // MILESTONE 8A — the actual, structural enforcement for a direct
+      // request: for a product explicitly marked "individuals only,"
+      // hard-reject anything that isn't prospect_type "person," rather
+      // than relying on the audience description alone. This is a real
+      // code-level filter, not a prompt hope — the exact kind of thing
+      // that's already proven necessary twice this session for keeping
+      // competitors out.
+      const candidates = product.require_individual_prospects
+        ? normalizedCandidates.filter((c) => c.prospect_type === "person")
+        : normalizedCandidates;
 
       // MILESTONE 7C — a safe, purely additive diagnostic, deliberately
       // NOT touching normalizeCandidate() itself to avoid any risk of
@@ -3002,6 +3013,11 @@ Do not return explanatory prose outside the JSON object.
           const email = typeof c.email === "string" ? c.email.trim().toLowerCase() : "";
           return !email || !isValidEmailSyntax(email);
         }).length,
+        // MILESTONE 8A — only meaningful when the product actually has
+        // this flag on; 0 for every other product, by construction.
+        rejected_as_organization_individuals_only: product.require_individual_prospects
+          ? structuredOutput.prospects.filter((c) => c.prospect_type !== "person").length
+          : 0,
       };
 
       /* -------------------------------------------------------------------- */

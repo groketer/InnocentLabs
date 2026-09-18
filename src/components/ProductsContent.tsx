@@ -152,6 +152,27 @@ export function ProductsContent() {
     }
   }
 
+  // MILESTONE 8A — a real, structural per-product constraint, not a
+  // suggestion buried in the audience text. Toggles immediately, same
+  // pattern as toggleCampaignPaused above.
+  async function toggleRequireIndividualProspects(id: string, requireIndividuals: boolean) {
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/products/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ require_individual_prospects: requireIndividuals }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not update this setting.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update this setting.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleDeleteProduct(id: string, name: string) {
     if (!window.confirm(`Delete "${name}"? Any prospects linked to it are kept, just detached from this product. This can't be undone.`)) {
       return;
@@ -883,6 +904,21 @@ export function ProductsContent() {
                     Write or correct these directly — a plain save, no AI call. Prospecting reads
                     whatever is here, whether it came from Generate Brief or you.
                   </p>
+                  <label className="flex items-center gap-2 rounded-md border border-ink-700 bg-ink-900 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={p.require_individual_prospects}
+                      disabled={busyId === p.id}
+                      onChange={(e) =>
+                        toggleRequireIndividualProspects(p.id, e.target.checked)
+                      }
+                      className="h-4 w-4 rounded border-ink-600 bg-ink-800"
+                    />
+                    <span className="text-xs text-white/70">
+                      Only prospect individuals — hard-reject any organization/company candidate,
+                      regardless of what the audience text says
+                    </span>
+                  </label>
                   {(
                     [
                       ["problem", "Problem it solves"],

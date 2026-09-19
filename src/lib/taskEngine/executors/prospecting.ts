@@ -3199,6 +3199,19 @@ Do not return explanatory prose outside the JSON object.
         ? normalizedCandidates.filter((c) => c.prospect_type === "person")
         : normalizedCandidates;
 
+      // MILESTONE 8M — a real, confirmed cost fix: isDuplicateProspect()
+      // used to run only in the persistence loop, after classifyCandidate()
+      // and discoverContactEmail() had already both run — meaning every
+      // duplicate candidate was fully, needlessly paid for twice (a
+      // classification call and often a real web-search discovery call)
+      // before being thrown away for a reason that was knowable for free,
+      // using data already loaded above. Filtering duplicates here, before
+      // either paid call, means that spend never happens for something
+      // that was always going to be discarded.
+      const deduplicatedCandidates = individualsFiltered.filter(
+        (c) => !isDuplicateProspect(existing, c, authoritativeProductId)
+      );
+
       // MILESTONE 8H — the real, structural competitor/audience-fit
       // enforcement now lives here, via classifyCandidate()'s
       // genuinely schema-enforced call, not the main candidate call's
@@ -3207,7 +3220,7 @@ Do not return explanatory prose outside the JSON object.
       // reach this — an API call per candidate isn't free, so it only
       // runs against things otherwise worth classifying.
       const classificationResults = await Promise.all(
-        individualsFiltered.map(async (c) => ({
+        deduplicatedCandidates.map(async (c) => ({
           candidate: c,
           classification: await classifyCandidate(
             c.name,
@@ -3351,6 +3364,12 @@ Do not return explanatory prose outside the JSON object.
         rejected_as_organization_individuals_only: product.require_individual_prospects
           ? structuredOutput.prospects.filter((c) => c.prospect_type !== "person").length
           : 0,
+        // MILESTONE 8M — real visibility into the actual cost saving:
+        // each of these is one classifyCandidate() call and possibly
+        // one discoverContactEmail() web-search call that no longer
+        // happens, because the candidate was already known to be a
+        // duplicate before either ran.
+        skipped_paid_calls_as_duplicate: individualsFiltered.length - deduplicatedCandidates.length,
         // MILESTONE 8I — replaces the old single-pass version. That
         // field measured the main call's output alone and is now
         // misleading, since candidates without a trail get a real,

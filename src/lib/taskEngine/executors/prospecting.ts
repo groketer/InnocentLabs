@@ -79,7 +79,7 @@
 import { Agent, run, webSearchTool } from "@openai/agents";
 import { z } from "zod";
 
-import type { AgentTask } from "@/lib/types";
+import type { AgentTask, Product } from "@/lib/types";
 import type { StepResult, SubtaskPlanItem, TaskExecutor } from "../types";
 
 import { getDb } from "@/lib/db";
@@ -2277,30 +2277,21 @@ export function normalizeCandidate(
       ? cleanText(candidate.audience_fit_check)
       : "") || "No explanation provided.";
 
-  // MILESTONE 7A — the actual enforcement this was missing entirely.
-  // Confirmed directly: 8 of 10 "qualified" prospects for one real
-  // product were obvious competitors, despite the model already being
-  // required to write out competitor/audience reasoning — because
-  // nothing ever checked that reasoning against anything. This does.
-  // MILESTONE 8C — the actual bug behind a real, confirmed incident: a
-  // company selling a directly competing course got through despite
-  // this check, because the model had skipped the reasoning step
-  // entirely for that candidate (both explanation fields came back
-  // empty). "=== true" only rejects an EXPLICIT competitor flag —
-  // candidate.is_competitor being undefined (reasoning skipped, not
-  // performed) evaluated to false here and sailed through as if
-  // confirmed safe. That's fail-open: missing reasoning treated as
-  // "fine." Flipped to fail-closed — anything not explicitly confirmed
-  // NOT a competitor gets rejected, same as an explicit competitor
-  // flag. A skipped reasoning step is exactly as dangerous as a wrong
-  // answer, and should be treated that way, not treated as a pass.
-  if (candidate.is_competitor !== false) {
-    return null;
-  }
-
-  if (candidate.is_audience_fit !== true) {
-    return null;
-  }
+  // MILESTONE 8H — the is_competitor/is_audience_fit enforcement that
+  // used to live here has been removed, not just adjusted a third
+  // time. Real diagnostic data confirmed the actual cause: this Agent
+  // is deliberately configured without outputType (see the comment at
+  // its construction) to avoid an earlier SDK-rejection regression —
+  // meaning NO field in this entire schema has ever been enforced by
+  // the API. Every field, including these two, has always depended on
+  // the model voluntarily complying with prompt text alone. That
+  // compliance measured at 0% across 6 consecutive real rounds once
+  // this fail-closed check made the gap visible instead of silently
+  // passing it. Rather than keep tightening a check against a field
+  // the model isn't reliably producing, classifyCandidate() below
+  // makes a separate, focused, genuinely schema-enforced call for
+  // just this judgment — a small schema the API can actually
+  // guarantee, unlike this large one.
 
   const opportunitySignal =
     typeof candidate.opportunity_signal ===
@@ -2313,6 +2304,7 @@ export function normalizeCandidate(
   if (!opportunitySignal) {
     return null;
   }
+
 
   /**
    * Email is mandatory at the executor boundary.
@@ -2486,6 +2478,77 @@ export function normalizeCandidate(
 
     unknowns,
   };
+}
+
+/**
+ * MILESTONE 8H — a deliberately small, separate structured-output call
+ * for exactly the judgment that the main candidate-generation call has
+ * been confirmed, with real data, not to reliably produce: is this
+ * candidate a competitor, and do they genuinely match the audience.
+ *
+ * The main prospecting Agent is built without outputType specifically
+ * to avoid the SDK rejecting a large, complex response outright (see
+ * the comment at its construction) — a real, previously-fixed
+ * regression. That workaround came at a cost: nothing about that
+ * response is actually enforced by the API, every field depends on
+ * the model choosing to comply with prompt text. This schema is four
+ * fields, not fourteen, and has none of an array's per-item edge
+ * cases — genuinely enforced structured output is a reasonable thing
+ * to expect from something this small, unlike the full candidate
+ * object.
+ */
+const CandidateClassificationSchema = z.object({
+  is_competitor: z
+    .boolean()
+    .describe(
+      "true if this candidate itself sells a product/service that does roughly the same job, to roughly the same buyer, as the target product. false otherwise."
+    ),
+  competitor_reason: z.string().describe("One sentence explaining the determination above."),
+  is_audience_fit: z
+    .boolean()
+    .describe(
+      "true if this specific candidate genuinely matches the product's actual described audience — not merely that they are a generally successful or visible person. false otherwise."
+    ),
+  audience_fit_reason: z.string().describe("One sentence explaining the determination above."),
+});
+
+type CandidateClassification = z.infer<typeof CandidateClassificationSchema>;
+
+async function classifyCandidate(
+  candidateName: string,
+  candidateDescription: string,
+  product: Product
+): Promise<CandidateClassification | null> {
+  const classificationAgent = new Agent({
+    name: "Prospect Classification Agent",
+    model: MODEL,
+    instructions: `You judge exactly one candidate against exactly one product. Nothing else.
+
+PRODUCT: ${product.name}
+Positioning: ${product.positioning ?? "Unknown"}
+Audience: ${product.audience ?? "Unknown"}
+
+CANDIDATE: ${candidateName}
+${candidateDescription}
+
+Decide: is this candidate a competitor (sells something that does roughly the
+same job, to roughly the same buyer, as the product above)? And does this
+candidate genuinely match the product's actual described audience, not just
+someone generally successful or visible?
+
+Return only the required JSON fields. No other output.`,
+    outputType: CandidateClassificationSchema,
+    tools: [],
+  });
+
+  try {
+    const result = await run(classificationAgent, "Classify this candidate now.");
+    const parsed = CandidateClassificationSchema.safeParse(result.finalOutput);
+    return parsed.success ? parsed.data : null;
+  } catch (error) {
+    console.error("[prospecting] classifyCandidate failed:", error);
+    return null;
+  }
 }
 
 /**
@@ -3065,9 +3128,40 @@ Do not return explanatory prose outside the JSON object.
       // code-level filter, not a prompt hope — the exact kind of thing
       // that's already proven necessary twice this session for keeping
       // competitors out.
-      const candidates = product.require_individual_prospects
+      const individualsFiltered = product.require_individual_prospects
         ? normalizedCandidates.filter((c) => c.prospect_type === "person")
         : normalizedCandidates;
+
+      // MILESTONE 8H — the real, structural competitor/audience-fit
+      // enforcement now lives here, via classifyCandidate()'s
+      // genuinely schema-enforced call, not the main candidate call's
+      // unreliable is_competitor/is_audience_fit fields. Only the
+      // candidates that already passed every cheap, synchronous check
+      // reach this — an API call per candidate isn't free, so it only
+      // runs against things otherwise worth classifying.
+      const classificationResults = await Promise.all(
+        individualsFiltered.map(async (c) => ({
+          candidate: c,
+          classification: await classifyCandidate(
+            c.name,
+            `${c.fit_reason} ${c.opportunity_signal}`.trim(),
+            product
+          ),
+        }))
+      );
+
+      const candidates = classificationResults
+        .filter(({ classification }) => {
+          if (!classification) return false; // classification call itself failed — fail closed
+          if (classification.is_competitor !== false) return false;
+          if (classification.is_audience_fit !== true) return false;
+          return true;
+        })
+        .map(({ candidate, classification }) => ({
+          ...candidate,
+          competitor_check: classification!.competitor_reason,
+          audience_fit_check: classification!.audience_fit_reason,
+        }));
 
       // MILESTONE 7C — a safe, purely additive diagnostic, deliberately
       // NOT touching normalizeCandidate() itself to avoid any risk of
@@ -3105,18 +3199,29 @@ Do not return explanatory prose outside the JSON object.
         missing_competitor_check_text: structuredOutput.prospects.filter(
           (c) => typeof c.competitor_check !== "string" || !cleanText(c.competitor_check)
         ).length,
+        // MILESTONE 8H — these text fields describe the main call's
+        // output only; they're no longer what enforcement is based on
+        // (see below), kept here just as a visibility signal that the
+        // main call still isn't reliably producing them.
         missing_audience_fit_check_text: structuredOutput.prospects.filter(
           (c) => typeof c.audience_fit_check !== "string" || !cleanText(c.audience_fit_check)
         ).length,
-        // MILESTONE 8C — renamed and corrected to match the actual,
-        // now fail-closed enforcement: catches both an explicit
-        // competitor flag AND a candidate where the model skipped this
-        // reasoning entirely (previously miscounted as "other").
-        rejected_as_competitor_or_unreasoned: structuredOutput.prospects.filter(
-          (c) => c.is_competitor !== false
+        // MILESTONE 8H — corrected to measure the real enforcement:
+        // classifyCandidate()'s dedicated, schema-enforced call, not
+        // the main call's is_competitor/is_audience_fit fields (which
+        // measured 0% reliable across 6 real rounds and are no longer
+        // used for anything). classification_call_failed catches a
+        // separate failure mode — the classification call itself
+        // erroring or returning something unparseable, distinct from
+        // a clean true/false answer either way.
+        rejected_as_competitor: classificationResults.filter(
+          ({ classification }) => classification && classification.is_competitor !== false
         ).length,
-        rejected_as_audience_non_fit_or_unreasoned: structuredOutput.prospects.filter(
-          (c) => c.is_audience_fit !== true
+        rejected_as_audience_non_fit: classificationResults.filter(
+          ({ classification }) => classification && classification.is_audience_fit !== true
+        ).length,
+        classification_call_failed: classificationResults.filter(
+          ({ classification }) => classification === null
         ).length,
         missing_opportunity_signal: structuredOutput.prospects.filter(
           (c) => typeof c.opportunity_signal !== "string" || !cleanText(c.opportunity_signal)

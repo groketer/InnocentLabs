@@ -1044,71 +1044,68 @@ This product is restricted to individual prospects only. Any organization
 or company candidate will be automatically rejected regardless of what
 you write about it, so do not spend search effort on companies at all.
 
-More importantly, your SEARCH STRATEGY itself needs to change, not just
-your filtering. Generic web search for this kind of audience tends to
-surface companies and platforms that SELL help to this audience — which
-are competitors, not prospects. Instead, actively search the specific
-places where real individuals post publicly about their own situation:
+CONTACT INFORMATION IS THE PART THAT ACTUALLY MATTERS HERE. Real,
+measured data across many prospecting rounds shows the previous
+approach — searching Reddit and LinkedIn discussion communities —
+consistently fails, not occasionally: essentially 100% of candidates
+found that way have no genuine, findable email, because those
+platforms are built around in-platform messaging, not public email
+disclosure. Searching there is not simply less effective — it does
+not produce usable results at all. Do not use it as your primary
+strategy.
 
-- Reddit communities where people post about their own circumstances:
-  r/jobs, r/personalfinance, r/povertyfinance, r/sidehustle,
-  r/WorkOnline, r/beermoney, r/financialindependence — searching for
-  people describing their own need, not businesses posting to these
-  communities.
-- LinkedIn "#opentowork" posts and comments — individuals who have
-  marked themselves as actively job-seeking, in their own words.
-- Job-board forums and comment sections (Indeed, Glassdoor) where
-  individuals discuss their own job search, not the listings themselves.
-- Facebook groups explicitly for job seekers or side-hustle seekers,
-  where members post about their own need.
-- Quora questions asked BY someone in this situation ("how do I make
-  money right now," "I need a job urgently") — the asker is a prospect;
-  someone answering by promoting their own service is not.
+Search instead where posting a real, working contact method is
+inherent to the post's own purpose — a person offering to do work FOR
+MONEY has to include a way to reach them, or the post fails at the one
+thing it exists to do:
 
-The test for every candidate found this way: is this a real person
-describing THEIR OWN need, in their own words, in a public post? If
-what you found is a company's marketing content, a job-board's own
-listing page, or another platform's promotional post, that is not
-sufficient — keep searching until you find an actual individual's own
-public statement about their own situation, with genuine, verifiable
-contact information.
+- Reddit's hiring/gig communities specifically, where this is the norm:
+  r/forhire (search the "[FOR HIRE]" tagged posts specifically — these
+  routinely include a direct email or contact method), r/slavelabour,
+  r/WorkOnline "for hire" posts, r/beermoney "offering services" posts.
+  This is different from r/jobs or r/personalfinance, which are
+  discussion communities where posting contact info is not expected.
+- Freelance marketplace profiles — Fiverr, Upwork, PeoplePerHour,
+  Contra — sellers frequently link a personal website or portfolio in
+  their profile, which itself often has a "Contact" page with an
+  email. A seller profile explicitly offering services for pay IS a
+  strong prospect for this product: someone actively working to make
+  money right now.
+- Craigslist "gigs" or "creative services" postings — individuals
+  posting their own services commonly include a direct email, since
+  that section doesn't route through in-platform messaging the way
+  major job boards do.
+- "For hire" or "available for work" posts on Twitter/X, where the
+  person includes their own contact information because the post's
+  entire purpose is to be reached.
+- A personal portfolio, blog, or resume site, once you've identified
+  someone as a strong candidate through any of the above — often
+  linked directly from their profile or post, with a "Contact" or
+  "About" page.
 
-CONTACT INFORMATION — THIS IS WHERE MOST PROSPECTING ON THIS PRODUCT
-ACTUALLY FAILS, SO READ THIS CAREFULLY:
+The individual doesn't need to be framed as "seeking a job" to be a
+genuine prospect for this product. Someone actively offering freelance
+work, gig work, or services for pay is, if anything, a BETTER fit —
+they are already hustling to make money and would directly benefit
+from a course on managing and growing that income. Prioritize these
+over passive "I need a job" discussion posts, which is exactly the
+category that has been structurally unable to produce contactable
+prospects.
 
-Most individuals on Reddit or LinkedIn do NOT display an email address
-anywhere in their post or profile — contact on those platforms normally
-happens through the platform's own messaging, not email. This means the
-person you just found being an excellent fit is not automatically
-someone you can include: you also need a genuinely, directly observed
-email for them specifically, not a plausible-looking one.
+The test for every candidate: is this a real person, in their own
+words, either offering their own work for pay or describing their own
+need for income — with a genuine, directly observed contact email,
+not a guess?
 
-Do NOT invent, infer, or guess an email address under any circumstance
-— not from a name, not from a common provider pattern, not because it
-seems like a reasonable thing this person would have. If you cannot
-find this specific person's actual email, stated or shown somewhere
-you can point to, DO NOT include them as a prospect. Skip them and
-keep searching for a different individual whose contact information
-you CAN genuinely find. A smaller number of real, contactable prospects
-is the correct outcome — not a larger number where some are guesses.
-
-Real emails for this kind of prospect are genuinely findable, just not
-usually on the platform where you first noticed them. Places worth
-checking once you've identified someone as a strong candidate:
-- Their own personal website, blog, or portfolio, if they have one,
-  often on a "Contact" or "About" page.
-- Freelance platform profiles (Upwork, Fiverr, Contra) — these
-  sometimes list a public contact email directly.
-- A forum post or comment where the person explicitly invites contact
-  ("email me at ___ for freelance work," "reach me at ___") — the
-  email appearing in their own words is exactly what makes it genuine.
-- A GitHub profile "About" section, for anyone with any technical or
-  online-work orientation.
-- A posted resume or CV that includes contact information.
-
-If none of these turn up a real, directly observed email for this
-specific person, they are not a usable prospect for this product right
-now, however good a fit they otherwise seem. Move on to someone else.`
+Do NOT invent, infer, or guess an email address under any
+circumstance — not from a name, not from a common provider pattern,
+not because it seems like a reasonable thing this person would have.
+If you cannot find this specific person's actual email, stated or
+shown somewhere you can point to, DO NOT include them as a prospect.
+Skip them and keep searching for a different individual whose contact
+information you CAN genuinely find. A smaller number of real,
+contactable prospects is the correct outcome — not a larger number
+where some are guesses.`
     : ""
 }
 MANDATORY AUDIENCE-FIT CHECK — before including any candidate:
@@ -2330,30 +2327,15 @@ export function normalizeCandidate(
     return null;
   }
 
-  // MILESTONE 8G — re-instated after being removed in 8F, on direct
-  // instruction: no compromise on fabricated emails, full stop. 8F's
-  // rollback wasn't wrong about the immediate cause (0 prospects across
-  // 4 rounds) but the actual root cause was upstream of this check —
-  // the search guidance pointed at Reddit and LinkedIn, platforms that
-  // mostly don't expose email at all, leaving the model nothing to
-  // find but a guess. That guidance has been rewritten (see
-  // buildProductContext's "CONTACT INFORMATION" section) to explicitly
-  // steer toward sources where a real email is actually discoverable,
-  // and to instruct the model to skip a candidate entirely rather than
-  // invent one. This check is the structural backstop for that
-  // instruction, exactly like the competitor and audience-fit checks —
-  // a skipped or fabricated email is exactly as unacceptable as a
-  // missed competitor flag, and gets the same fail-closed treatment:
-  // the literal address must appear in this candidate's own evidence,
-  // no exemptions by provider or prospect type.
-  const hasEmailEvidenceTrail = evidence.some(
-    (item) =>
-      item.source.toLowerCase().includes(email) ||
-      item.observation.toLowerCase().includes(email)
-  );
-  if (!hasEmailEvidenceTrail) {
-    return null;
-  }
+  // MILESTONE 8I — the email-evidence-trail check that lived here
+  // (8E/8G) moved downstream, into the main pipeline, after this
+  // function returns. Real data showed it rejecting 100% of
+  // candidates across every round even with better search guidance —
+  // the same root problem the classification split fixed for
+  // competitor/audience-fit: one call was being asked to do too much.
+  // discoverContactEmail() now gets a genuine, focused, separate
+  // attempt at finding a real email before a candidate is rejected for
+  // lacking one, rather than rejecting here on the first pass alone.
 
   const confidence =
     typeof candidate.confidence ===
@@ -2547,6 +2529,81 @@ Return only the required JSON fields. No other output.`,
     return parsed.success ? parsed.data : null;
   } catch (error) {
     console.error("[prospecting] classifyCandidate failed:", error);
+    return null;
+  }
+}
+
+/**
+ * MILESTONE 8I — the same fix that resolved the competitor/audience-fit
+ * problem, applied to the actual current bottleneck. Real data showed
+ * rejected_email_no_evidence_trail at 100% across every round, on two
+ * separate days, even after search guidance was rewritten twice. The
+ * main call is being asked to do too much at once — find the right
+ * person AND verify their contact info in a single pass — and contact
+ * verification is consistently the part that loses. This gives a
+ * candidate who is otherwise fully qualified one more, focused,
+ * genuinely searching attempt at finding their real email, before
+ * being rejected outright for the lack of one.
+ */
+const ContactDiscoverySchema = z.object({
+  email_found: z
+    .boolean()
+    .describe(
+      "true only if you found a genuine, explicitly, publicly stated email for this specific person, somewhere you can point to."
+    ),
+  email: z
+    .string()
+    .describe(
+      "The email address, if email_found is true. Empty string if email_found is false."
+    ),
+  source_url: z
+    .string()
+    .describe(
+      "The exact URL where you found this email stated. Empty string if email_found is false."
+    ),
+});
+
+type ContactDiscoveryResult = z.infer<typeof ContactDiscoverySchema>;
+
+async function discoverContactEmail(
+  candidateName: string,
+  candidateDescription: string
+): Promise<ContactDiscoveryResult | null> {
+  const discoveryAgent = new Agent({
+    name: "Contact Discovery Agent",
+    model: MODEL,
+    instructions: `You have one job: find a real, genuine, publicly stated email
+address for exactly one specific person. Nothing else.
+
+PERSON: ${candidateName}
+${candidateDescription}
+
+Search for this specific person's real contact email. Good places to check:
+their personal website or portfolio (often a "Contact" or "About" page),
+freelance marketplace profiles (Upwork, Fiverr, Contra, PeoplePerHour),
+a GitHub "About" section, a posted resume or CV, or a forum post/comment
+where they explicitly invite contact ("email me at ___").
+
+Do NOT guess, infer, or construct a plausible-looking email from their
+name. If you cannot find their actual email explicitly stated somewhere,
+set email_found to false — that is a completely acceptable, expected
+outcome, not a failure to fix by guessing instead.
+
+Return only the required JSON fields. No other output.`,
+    outputType: ContactDiscoverySchema,
+    tools: [
+      webSearchTool({
+        searchContextSize: "medium",
+      }),
+    ],
+  });
+
+  try {
+    const result = await run(discoveryAgent, "Find this person's real email now.");
+    const parsed = ContactDiscoverySchema.safeParse(result.finalOutput);
+    return parsed.success ? parsed.data : null;
+  } catch (error) {
+    console.error("[prospecting] discoverContactEmail failed:", error);
     return null;
   }
 }
@@ -3150,7 +3207,7 @@ Do not return explanatory prose outside the JSON object.
         }))
       );
 
-      const candidates = classificationResults
+      const classifiedCandidates = classificationResults
         .filter(({ classification }) => {
           if (!classification) return false; // classification call itself failed — fail closed
           if (classification.is_competitor !== false) return false;
@@ -3162,6 +3219,55 @@ Do not return explanatory prose outside the JSON object.
           competitor_check: classification!.competitor_reason,
           audience_fit_check: classification!.audience_fit_reason,
         }));
+
+      // MILESTONE 8I — for each candidate that's otherwise fully
+      // qualified, check whether the main call already gave it a
+      // genuine, evidence-backed email; if not, one real, focused
+      // discovery attempt before rejecting outright. Only runs against
+      // candidates that already passed everything else — an actual
+      // web search per candidate isn't free.
+      const contactResolved: Array<ProspectCandidate | null> = await Promise.all(
+        classifiedCandidates.map(async (c): Promise<ProspectCandidate | null> => {
+          const email = c.email ?? "";
+          const candidateEvidence = c.evidence ?? [];
+
+          const alreadyHasTrail = candidateEvidence.some(
+            (item) =>
+              item.source.toLowerCase().includes(email) ||
+              item.observation.toLowerCase().includes(email)
+          );
+          if (alreadyHasTrail) {
+            return c;
+          }
+
+          const discovery = await discoverContactEmail(
+            c.name,
+            `${c.fit_reason ?? ""} ${c.opportunity_signal ?? ""}`.trim()
+          );
+
+          if (!discovery || !discovery.email_found || !isValidEmailSyntax(discovery.email)) {
+            return null; // no genuine email found — reject, not guess
+          }
+
+          const resolved: ProspectCandidate = {
+            ...c,
+            email: discovery.email.trim().toLowerCase(),
+            evidence: [
+              ...candidateEvidence,
+              {
+                observation: `Contact email found: ${discovery.email}`,
+                source: discovery.source_url,
+              },
+            ],
+          };
+
+          return resolved;
+        })
+      );
+
+      const candidates: ProspectCandidate[] = contactResolved.filter(
+        (c): c is ProspectCandidate => c !== null
+      );
 
       // MILESTONE 7C — a safe, purely additive diagnostic, deliberately
       // NOT touching normalizeCandidate() itself to avoid any risk of
@@ -3235,25 +3341,29 @@ Do not return explanatory prose outside the JSON object.
         rejected_as_organization_individuals_only: product.require_individual_prospects
           ? structuredOutput.prospects.filter((c) => c.prospect_type !== "person").length
           : 0,
-        // MILESTONE 8G — re-instated alongside the check itself.
-        // Watch this specifically if volume is low again: a high
-        // number here means the search guidance still isn't reliably
-        // steering toward genuinely contactable people, not that the
-        // check itself is wrong.
-        rejected_email_no_evidence_trail: structuredOutput.prospects.filter((c) => {
-          const email = typeof c.email === "string" ? c.email.trim().toLowerCase() : "";
-          if (!email || !isValidEmailSyntax(email)) return false; // already counted above
-          const rawEvidence = Array.isArray(c.evidence) ? c.evidence : [];
-          const hasTrail = rawEvidence.some((item: unknown) => {
-            const normalized = normalizeEvidence(item);
-            if (!normalized) return false;
-            return (
-              normalized.source.toLowerCase().includes(email) ||
-              normalized.observation.toLowerCase().includes(email)
-            );
-          });
-          return !hasTrail;
+        // MILESTONE 8I — replaces the old single-pass version. That
+        // field measured the main call's output alone and is now
+        // misleading, since candidates without a trail get a real,
+        // separate discovery attempt before being rejected. These two
+        // numbers tell the two different stories that matters now:
+        // how often the main call alone wasn't enough, and — of
+        // those — how often the dedicated discovery call actually
+        // found something real versus came back empty.
+        needed_contact_discovery_fallback: classifiedCandidates.filter((c) => {
+          const email = c.email ?? "";
+          const trail = (c.evidence ?? []).some(
+            (item) =>
+              item.source.toLowerCase().includes(email) ||
+              item.observation.toLowerCase().includes(email)
+          );
+          return !trail;
         }).length,
+        contact_discovery_found_real_email: contactResolved.filter((c, i) => {
+          if (c === null) return false;
+          const original = classifiedCandidates[i];
+          return original && c.email !== original.email;
+        }).length,
+        rejected_no_real_email_found: contactResolved.filter((c) => c === null).length,
       };
 
       /* -------------------------------------------------------------------- */

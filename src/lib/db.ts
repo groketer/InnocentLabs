@@ -1080,6 +1080,26 @@ async function runMigrations(db: Db): Promise<void> {
     );
   }
 
+  /*
+   * MILESTONE 8L — a real, direct response to require_individual_
+   * prospects turning out to conflate two genuinely different things.
+   * A real, confirmed batch of results was 100% organizations, zero
+   * individuals — traced to the individual-search guidance being
+   * gated behind the same flag as the hard exclusion filter. When
+   * that flag is off (as it was), the model never gets told to
+   * actively search job/gig platforms for individuals at all, and
+   * defaults to whatever general web search finds first — which is
+   * almost always well-documented organizations, not individuals
+   * scattered across forum posts. This flag activates that search
+   * guidance independently, without excluding organizations that are
+   * also genuinely relevant — for a product where both are welcome.
+   */
+  if (!productsColumns.has("also_search_individuals")) {
+    await db.execute(
+      `ALTER TABLE products ADD COLUMN also_search_individuals BOOLEAN NOT NULL DEFAULT false`
+    );
+  }
+
   await db.batch(
     [
       {

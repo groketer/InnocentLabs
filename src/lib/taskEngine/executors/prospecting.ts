@@ -1036,13 +1036,23 @@ is a person who could theoretically use it.`
     : ""
 }
 ${
-  product.require_individual_prospects
+  (product.require_individual_prospects || product.also_search_individuals)
     ? `
-INDIVIDUALS-ONLY SEARCH STRATEGY — HARD DIRECTIVE FOR THIS PRODUCT:
+${product.require_individual_prospects ? "INDIVIDUALS-ONLY SEARCH STRATEGY — HARD DIRECTIVE FOR THIS PRODUCT" : "ACTIVELY SEARCH FOR INDIVIDUAL PROSPECTS TOO — IN ADDITION TO ORGANIZATIONS"}:
 
-This product is restricted to individual prospects only. Any organization
+${
+  product.require_individual_prospects
+    ? `This product is restricted to individual prospects only. Any organization
 or company candidate will be automatically rejected regardless of what
-you write about it, so do not spend search effort on companies at all.
+you write about it, so do not spend search effort on companies at all.`
+    : `This product's audience includes real individuals, not just
+organizations. Organizations that genuinely serve this audience are
+still welcome — this is not a restriction. But actively make sure your
+search also surfaces genuine individual prospects, not only
+organizations, which tend to be easier for general web search to find
+simply because they're better-documented. Don't let that ease of
+discovery mean individuals are underrepresented in what you return.`
+}
 
 CONTACT INFORMATION IS THE PART THAT ACTUALLY MATTERS HERE. Real,
 measured data across many prospecting rounds shows the previous

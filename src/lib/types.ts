@@ -152,6 +152,7 @@ export interface Product {
   supplementary_knowledge: string | null;
   approval_status: "pending" | "approved";
   require_individual_prospects: boolean;
+  also_search_individuals: boolean;
   last_audited_at: string | null;
   created_at: string;
   updated_at: string;

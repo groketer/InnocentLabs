@@ -922,6 +922,44 @@ export async function updateProductRequireIndividualProspects(
   return product;
 }
 
+/**
+ * MILESTONE 8L — activates individual-search guidance independently
+ * of the hard exclusion filter, for a product where both organizations
+ * and individuals are genuinely welcome.
+ */
+export async function updateProductAlsoSearchIndividuals(
+  id: string,
+  alsoSearchIndividuals: boolean
+): Promise<Product> {
+  const db = await getDb();
+
+  const result = await db.execute({
+    sql: `
+      UPDATE products
+      SET also_search_individuals = @alsoSearchIndividuals, updated_at = ${NOW_ISO_SQL}
+      WHERE id = @id
+    `,
+    args: { id, alsoSearchIndividuals },
+  });
+
+  if (result.rowsAffected === 0) {
+    throw new Error("Product not found.");
+  }
+
+  const result2 = await db.execute({
+    sql: `SELECT * FROM products WHERE id = ?`,
+    args: [id],
+  });
+
+  const product = result2.rows[0] as unknown as Product | undefined;
+
+  if (!product) {
+    throw new Error("Product was updated but could not be retrieved afterward.");
+  }
+
+  return product;
+}
+
 
 /**
  * MILESTONE 3O — geographic targeting per product.

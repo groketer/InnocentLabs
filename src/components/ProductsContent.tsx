@@ -173,6 +173,27 @@ export function ProductsContent() {
     }
   }
 
+  // MILESTONE 8L — a separate, non-exclusive setting: activates the
+  // individual-search guidance without hard-rejecting organizations,
+  // for a product where both are genuinely welcome.
+  async function toggleAlsoSearchIndividuals(id: string, alsoSearch: boolean) {
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/products/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ also_search_individuals: alsoSearch }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not update this setting.");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update this setting.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function handleDeleteProduct(id: string, name: string) {
     if (!window.confirm(`Delete "${name}"? Any prospects linked to it are kept, just detached from this product. This can't be undone.`)) {
       return;
@@ -917,6 +938,22 @@ export function ProductsContent() {
                     <span className="text-xs text-white/70">
                       Only prospect individuals — hard-reject any organization/company candidate,
                       regardless of what the audience text says
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2 rounded-md border border-ink-700 bg-ink-900 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      checked={p.also_search_individuals}
+                      disabled={busyId === p.id || p.require_individual_prospects}
+                      onChange={(e) =>
+                        toggleAlsoSearchIndividuals(p.id, e.target.checked)
+                      }
+                      className="h-4 w-4 rounded border-ink-600 bg-ink-800"
+                    />
+                    <span className="text-xs text-white/70">
+                      Also actively search for individuals, without rejecting organizations —
+                      use this when both are genuinely welcome for this product
+                      {p.require_individual_prospects && " (already implied by the setting above)"}
                     </span>
                   </label>
                   {(

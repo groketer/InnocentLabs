@@ -54,6 +54,13 @@ export async function GET(req: NextRequest) {
       completedAt: r.completed_at,
       rawCandidatesBeforeFiltering: data?.raw_candidates_before_filtering ?? "not present — this run predates the diagnostic fix",
       prospectsFound: data?.prospects_found ?? null,
+      // MILESTONE 8J — the exact missing field behind a real, direct
+      // confusion: prospects_found is candidates that passed all
+      // filtering; prospects_persisted is what actually got newly
+      // written to the database, after deduplication against existing
+      // prospects. The two can genuinely differ, and only the first
+      // one was visible here before this.
+      prospectsPersisted: data?.prospects_persisted ?? null,
       rejectionBreakdown: data?.rejection_breakdown ?? null,
     };
   });

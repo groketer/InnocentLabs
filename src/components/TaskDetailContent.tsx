@@ -29,7 +29,13 @@ export function TaskDetailContent({ taskId }: { taskId: string }) {
     // reduction (see EngineTicker.tsx). Kept faster than the general 20s
     // used elsewhere since this page is specifically for watching one
     // task's live progress, where responsiveness matters more.
-    const interval = setInterval(load, 8000);
+    //
+    // MILESTONE 8N — reduced further, from 8s to 15s. Still meaningfully
+    // faster than the 45s dashboard pollers, since this page is
+    // genuinely about watching one task live, but the app is at real
+    // risk of the Hobby-plan Active CPU cap with no budget to upgrade,
+    // and every reduction here helps.
+    const interval = setInterval(load, 15000);
     return () => clearInterval(interval);
   }, [load]);
 

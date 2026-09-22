@@ -25,7 +25,10 @@ export function ChatTaskCard({ taskId }: { taskId: string }) {
     load();
     // MILESTONE 3Z-3 — reduced from 3s to 8s, same reasoning as
     // TaskDetailContent.tsx.
-    const interval = setInterval(load, 8000);
+    //
+    // MILESTONE 8N — reduced further, from 8s to 15s, same reasoning
+    // and same change as TaskDetailContent.tsx.
+    const interval = setInterval(load, 15000);
     return () => {
       cancelled = true;
       clearInterval(interval);

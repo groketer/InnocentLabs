@@ -23,7 +23,13 @@ export function AgentStatusBadge() {
   // own polling, so together they were generating real, avoidable
   // database load — roughly 30 requests/minute from a single open tab
   // before this change.
-  const POLL_INTERVAL_MS = 20_000;
+  //
+  // MILESTONE 8N — reduced further, from 20s to 45s, alongside
+  // EngineTicker and the other global pollers. Real, direct response to
+  // being at risk of the Hobby-plan Active CPU cap with no budget to
+  // upgrade — a status badge is worth being a little less snappy to
+  // avoid the whole app pausing.
+  const POLL_INTERVAL_MS = 45_000;
 
   useEffect(() => {
     let cancelled = false;

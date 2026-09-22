@@ -115,7 +115,11 @@ export function DashboardContent() {
     // database load behind the connectivity failures investigated in
     // this session. A live-updating dashboard doesn't need sub-5-second
     // freshness to be useful.
-    const interval = setInterval(load, 20_000);
+    // MILESTONE 8N — reduced from 20s to 45s, alongside the other
+    // global/dashboard pollers. Real, direct response to being at risk
+    // of the Vercel Hobby-plan Active CPU cap with no budget to
+    // upgrade right now.
+    const interval = setInterval(load, 45_000);
     return () => {
       cancelled = true;
       clearInterval(interval);

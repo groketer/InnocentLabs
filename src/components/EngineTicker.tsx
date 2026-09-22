@@ -34,8 +34,14 @@ import { useEffect } from "react";
  * that while a tab happens to be open" — which doesn't need sub-5-second
  * frequency to be useful, and a real database load reduction is worth
  * more than that marginal responsiveness at this point.
+ *
+ * MILESTONE 8N — reduced further, from 20s to 45s. A real, direct
+ * response to genuinely being at risk of Vercel's Hobby-plan Active CPU
+ * cap, with no budget to upgrade. QStash is confirmed the actual
+ * backstop now; this is purely a UI-freshness nicety on top of it, and
+ * that nicety isn't worth risking the whole app pausing.
  */
-const TICK_INTERVAL_MS = 20_000;
+const TICK_INTERVAL_MS = 45_000;
 
 export default function EngineTicker() {
   useEffect(() => {

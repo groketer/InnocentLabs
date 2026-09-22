@@ -48,7 +48,10 @@ export function AgentQuestionsAndSuggestions() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 30_000);
+    // MILESTONE 8N — reduced from 30s to 60s, same reasoning as the
+    // other dashboard pollers - real, direct response to the Hobby-plan
+    // Active CPU risk with no budget to upgrade.
+    const interval = setInterval(load, 60_000);
     return () => clearInterval(interval);
   }, []);
 

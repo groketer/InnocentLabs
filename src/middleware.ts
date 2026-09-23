@@ -36,6 +36,17 @@ export const config = {
     // verification inside the route itself, the same pattern as
     // api/tasks/tick authenticating via QStash's signature instead of a
     // session cookie.
-    "/((?!api/cron|api/auth|api/tasks/tick|api/tick-status|api/debug|api/webhooks|unsubscribe|login|_next/static|_next/image|favicon.ico).*)",
+    //
+    // MILESTONE 8O — api/debug REMOVED from this exemption list. A real,
+    // confirmed gap: every diagnostic route (bounce investigation,
+    // prospecting diagnostics, product flag checks) was reachable by
+    // anyone with the URL, no login required, despite the rest of the
+    // app being genuinely gated. These routes have no external caller
+    // authenticating another way (unlike cron/auth/tick/webhooks above,
+    // which all have their own legitimate reason to bypass the session
+    // cookie) — they were only ever meant to be hit by the app's own
+    // logged-in user. Now covered by the same session-cookie gate as
+    // everything else.
+    "/((?!api/cron|api/auth|api/tasks/tick|api/tick-status|api/webhooks|unsubscribe|login|_next/static|_next/image|favicon.ico).*)",
   ],
 };

@@ -282,6 +282,90 @@ function parseResult(raw: string): ComposeReplyResult {
   throw new Error(`Reply composer returned an unrecognized action: ${String(obj.action)}`);
 }
 
+/**
+ * MILESTONE 8R — a real, confirmed incident, not a hypothetical: a real
+ * prospect asked, seven separate times across one conversation, whether
+ * Innocent Labs had other products. The reply agent denied it every
+ * time, including an explicit, named denial ("We do not have a
+ * LinkedIn Domination Masterclass course") of a product that genuinely
+ * exists in the portfolio. The MILESTONE 8P fix (passing other-product
+ * awareness into the prompt) clearly wasn't reliably followed — the
+ * same pattern already proven true elsewhere this session: a soft
+ * prompt instruction, however clearly worded, isn't a reliable
+ * safeguard against a scripted, autonomous system actively lying to a
+ * real person.
+ *
+ * Rather than trying a third wording of the same instruction, this is
+ * the structural version: a small, focused, strictly schema-enforced
+ * check for exactly one thing — is the prospect asking whether other
+ * products exist. If yes, and other products genuinely do exist, this
+ * routes to human escalation rather than risking another autonomous
+ * false denial. A missed autonomous reply costs a few hours' delay.
+ * A false denial, discovered, costs trust that doesn't come back.
+ */
+const ASKING_ABOUT_OTHER_PRODUCTS_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    is_asking_about_other_products: {
+      type: "boolean" as const,
+      description:
+        "true if the prospect's message asks, in any form, whether Innocent Labs has other products, programs, or offerings beyond the one currently being discussed — including asking about a specific other product by name, or asking generally.",
+    },
+  },
+  required: ["is_asking_about_other_products"],
+  additionalProperties: false,
+};
+
+export async function isAskingAboutOtherProducts(
+  inboundText: string,
+  currentProductName: string
+): Promise<boolean> {
+  // MILESTONE 8R — deliberately fails closed toward CAUTION, not
+  // toward "assume it's fine": given the actual stakes here (a real,
+  // observed false denial that damaged trust with a real prospect),
+  // a failed check should escalate, the same as a confirmed "yes." If
+  // this returns true for any reason — a genuine detection or the
+  // check itself being unable to run — the caller treats it as reason
+  // to route to a human rather than risk the less reliable path.
+  if (!process.env.OPENAI_API_KEY) return true;
+
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+  try {
+    const completion = await client.chat.completions.create({
+      model: MODEL,
+      messages: [
+        {
+          role: "system",
+          content:
+            "You judge exactly one thing: does this message ask whether other products exist, beyond the one currently being discussed. Nothing else.",
+        },
+        {
+          role: "user",
+          content: `Product currently being discussed: ${currentProductName}\n\nProspect's message:\n${inboundText}`,
+        },
+      ],
+      temperature: 0,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "asking_about_other_products",
+          strict: true,
+          schema: ASKING_ABOUT_OTHER_PRODUCTS_SCHEMA,
+        },
+      },
+    });
+
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) return true; // couldn't get a confirmed answer - escalate rather than assume
+    const parsed = JSON.parse(raw) as { is_asking_about_other_products: boolean };
+    return parsed.is_asking_about_other_products === true;
+  } catch (error) {
+    console.error("[composeReply] isAskingAboutOtherProducts failed:", error);
+    return true; // check itself failed - escalate rather than silently risk the unreliable path
+  }
+}
+
 export async function composeReply(
   input: ComposeReplyInput
 ): Promise<ComposeReplyResult> {

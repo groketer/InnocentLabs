@@ -20,7 +20,7 @@
 
 import { fetchUnseenMessages, isImapConfigured, INBOX_CHECK_BATCH_SIZE } from "./imapClient";
 import { looksLikeBounce, extractBouncedAddress } from "./bounceDetection";
-import { composeReply } from "./composeReply";
+import { composeReply, isAskingAboutOtherProducts } from "./composeReply";
 import { sendEmail } from "./sendEmail";
 import { notifyOwner } from "./notifyOwner";
 import {
@@ -311,6 +311,37 @@ async function processOneMessage(
   const otherProducts = allProducts.filter((p) => p.id !== product?.id);
 
   const history = await listSendsForProspect(prospect.id);
+
+  // MILESTONE 8R — the structural safety net for a real, confirmed
+  // incident: checked BEFORE composeReply() runs at all, so a
+  // detected case never reaches the less reliable generation step.
+  // Only escalates when other products genuinely exist — if this
+  // really is the only product, "we only have this one" is a true
+  // statement and the autonomous path is fine.
+  if (otherProducts.length > 0) {
+    const askingAboutOthers = await isAskingAboutOtherProducts(
+      message.text,
+      product?.name ?? "the product being discussed"
+    );
+    if (askingAboutOthers) {
+      await escalateToHuman(
+        prospect,
+        "Prospect asked whether other products exist — routed to a human rather than risk an autonomous false denial (see MILESTONE 8R)."
+      );
+      await recordInboundEmail({
+        user_id: LOCAL_USER_ID,
+        prospect_id: prospect.id,
+        message_id: message.messageId,
+        from_address: message.fromAddress,
+        subject: message.subject,
+        body: message.text,
+        classification: "reply",
+        handled: "escalated",
+        note: "Asked about other products — escalated rather than risk a false denial.",
+      });
+      return;
+    }
+  }
 
   let decision;
   try {

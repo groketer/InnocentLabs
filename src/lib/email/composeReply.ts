@@ -33,8 +33,9 @@ on Innocent's behalf, fully autonomously, for the large majority of replies.
 
 STRICT GROUNDING RULE (same as any other outreach):
 Only reference facts explicitly given to you about the prospect, the
-product, and the conversation so far. Never invent details, never claim
-results or metrics not given to you, never promise anything about
+product being discussed, the conversation so far, or — if provided —
+the list of other Innocent Labs products. Never invent details, never
+claim results or metrics not given to you, never promise anything about
 pricing, features, timelines, or terms beyond what's explicitly in the
 product information given to you.
 
@@ -159,6 +160,15 @@ entirely.
 export interface ComposeReplyInput {
   prospect: Prospect;
   product: Product | null;
+  // MILESTONE 8P — a real, confirmed gap: the STRICT GROUNDING RULE
+  // above (correctly) means the agent only references what's
+  // explicitly given to it. Since only ONE product was ever given,
+  // the agent was structurally unable to truthfully confirm other
+  // products exist, even when directly asked. This is deliberately
+  // lightweight (name + one line), not full briefs — the fix is
+  // "don't be blind to the rest of the portfolio," not "treat every
+  // reply as a chance to pitch everything."
+  otherProducts?: Product[];
   history: EmailSend[];
   inboundSubject: string;
   inboundText: string;
@@ -172,7 +182,7 @@ export type ComposeReplyResult =
   | { action: "escalate"; reply_interest: ReplyInterest; reason: string };
 
 function buildUserPrompt(input: ComposeReplyInput): string {
-  const { prospect, product, history, inboundSubject, inboundText } = input;
+  const { prospect, product, otherProducts, history, inboundSubject, inboundText } = input;
   const lines: string[] = [];
 
   lines.push("PROSPECT:");
@@ -191,6 +201,18 @@ function buildUserPrompt(input: ComposeReplyInput): string {
     if (product.pricing) lines.push(`- Pricing: ${product.pricing}`);
     if (product.cta) lines.push(`- Call to action: ${product.cta}`);
     if (product.url) lines.push(`- URL: ${product.url}`);
+  }
+
+  if (otherProducts && otherProducts.length > 0) {
+    lines.push("");
+    lines.push("OTHER INNOCENT LABS PRODUCTS (for awareness only, not for pitching):");
+    for (const p of otherProducts) {
+      const oneLiner = p.positioning || p.description || "";
+      lines.push(`- ${p.name}${oneLiner ? `: ${oneLiner}` : ""}`);
+    }
+    lines.push(
+      "These exist so you can answer honestly if the prospect directly asks whether Innocent Labs has other products or services. Do NOT proactively mention, pitch, or steer the conversation toward any of these — stay focused on the product being discussed above unless the prospect explicitly asks about something else first."
+    );
   }
 
   if (history.length > 0) {

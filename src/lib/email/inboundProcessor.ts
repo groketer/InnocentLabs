@@ -30,7 +30,7 @@ import {
   findProspectByDomain,
   type Prospect,
 } from "@/lib/models/prospects";
-import { getProductById } from "@/lib/models/products";
+import { getProductById, listProducts } from "@/lib/models/products";
 import {
   recordEmailSend,
   listSendsForProspect,
@@ -300,6 +300,16 @@ async function processOneMessage(
   const product = prospect.product_id
     ? await getProductById(prospect.product_id)
     : null;
+
+  // MILESTONE 8P — the actual fix for a real, confirmed gap: the
+  // reply agent previously had zero awareness that any product other
+  // than the one being discussed existed, and correctly (per its own
+  // grounding rule) refused to claim otherwise when asked directly.
+  // Fetches the rest of the portfolio, lightweight, so it can answer
+  // honestly without that becoming license to pitch everything.
+  const allProducts = await listProducts();
+  const otherProducts = allProducts.filter((p) => p.id !== product?.id);
+
   const history = await listSendsForProspect(prospect.id);
 
   let decision;
@@ -307,6 +317,7 @@ async function processOneMessage(
     decision = await composeReply({
       prospect,
       product,
+      otherProducts,
       history,
       inboundSubject: message.subject,
       inboundText: message.text,

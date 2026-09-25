@@ -79,6 +79,10 @@ to handle personally. Escalate when the message:
 - asks something you cannot answer confidently from the product
   information given to you (do not guess or improvise an answer just to
   avoid escalating);
+- describes a need, question, or interest that does not genuinely fit
+  the product being discussed, AND does not genuinely fit any of the
+  other Innocent Labs products listed below either — a real dead end,
+  not merely a case where the fit is imperfect but still reasonable;
 - raises anything that seems like it could carry real legal, financial,
   or reputational weight, even if you're not sure exactly why it feels
   that way.
@@ -134,17 +138,19 @@ an unsubscribe request can still legitimately be "genuine_interest" if
 the underlying sentiment was positive before the specific trigger (e.g.
 someone interested but asking a pricing question you must escalate).
 
-Respond with ONLY a JSON object, no markdown fences, no extra commentary:
+Respond with ONLY a JSON object. Every field below is always present in
+your response — set whichever ones don't apply to your chosen action to
+null, rather than omitting them:
 
-{"action": "reply", "reply_interest": "...", "subject": "...", "body": "..."}
-
-or
-
-{"action": "unsubscribe", "reply_interest": "...", "acknowledgment": "a short, warm one-to-two sentence confirmation that they won't hear from us again"}
+{"action": "reply", "reply_interest": "...", "subject": "...", "body": "...", "acknowledgment": null, "reason": null}
 
 or
 
-{"action": "escalate", "reply_interest": "...", "reason": "one sentence explaining why, for Innocent to read"}
+{"action": "unsubscribe", "reply_interest": "...", "subject": null, "body": null, "acknowledgment": "a short, warm one-to-two sentence confirmation that they won't hear from us again", "reason": null}
+
+or
+
+{"action": "escalate", "reply_interest": "...", "subject": null, "body": null, "acknowledgment": null, "reason": "one sentence explaining why, for Innocent to read"}
 
 DO NOT INCLUDE a signature, sign-off name, postal address, or unsubscribe
 text in "body" — those are appended automatically.
@@ -205,13 +211,13 @@ function buildUserPrompt(input: ComposeReplyInput): string {
 
   if (otherProducts && otherProducts.length > 0) {
     lines.push("");
-    lines.push("OTHER INNOCENT LABS PRODUCTS (for awareness only, not for pitching):");
+    lines.push("OTHER INNOCENT LABS PRODUCTS:");
     for (const p of otherProducts) {
       const oneLiner = p.positioning || p.description || "";
       lines.push(`- ${p.name}${oneLiner ? `: ${oneLiner}` : ""}`);
     }
     lines.push(
-      "These exist so you can answer honestly if the prospect directly asks whether Innocent Labs has other products or services. Do NOT proactively mention, pitch, or steer the conversation toward any of these — stay focused on the product being discussed above unless the prospect explicitly asks about something else first."
+      "Use this list two ways. First, if the prospect directly asks whether Innocent Labs has other products or services, answer honestly using only what's listed here — never deny these exist, and never claim there's only one product. Second, if what the prospect actually wants doesn't genuinely fit the product being discussed above but does fit one of these, factually recommend that one instead, using only the details given here — do not invent features, pricing, or specifics beyond what's listed. Don't proactively pitch every product in this list on every reply; only bring one up when it's actually relevant to what the prospect just said or asked."
     );
   }
 
@@ -282,90 +288,6 @@ function parseResult(raw: string): ComposeReplyResult {
   throw new Error(`Reply composer returned an unrecognized action: ${String(obj.action)}`);
 }
 
-/**
- * MILESTONE 8R — a real, confirmed incident, not a hypothetical: a real
- * prospect asked, seven separate times across one conversation, whether
- * Innocent Labs had other products. The reply agent denied it every
- * time, including an explicit, named denial ("We do not have a
- * LinkedIn Domination Masterclass course") of a product that genuinely
- * exists in the portfolio. The MILESTONE 8P fix (passing other-product
- * awareness into the prompt) clearly wasn't reliably followed — the
- * same pattern already proven true elsewhere this session: a soft
- * prompt instruction, however clearly worded, isn't a reliable
- * safeguard against a scripted, autonomous system actively lying to a
- * real person.
- *
- * Rather than trying a third wording of the same instruction, this is
- * the structural version: a small, focused, strictly schema-enforced
- * check for exactly one thing — is the prospect asking whether other
- * products exist. If yes, and other products genuinely do exist, this
- * routes to human escalation rather than risking another autonomous
- * false denial. A missed autonomous reply costs a few hours' delay.
- * A false denial, discovered, costs trust that doesn't come back.
- */
-const ASKING_ABOUT_OTHER_PRODUCTS_SCHEMA = {
-  type: "object" as const,
-  properties: {
-    is_asking_about_other_products: {
-      type: "boolean" as const,
-      description:
-        "true if the prospect's message asks, in any form, whether Innocent Labs has other products, programs, or offerings beyond the one currently being discussed — including asking about a specific other product by name, or asking generally.",
-    },
-  },
-  required: ["is_asking_about_other_products"],
-  additionalProperties: false,
-};
-
-export async function isAskingAboutOtherProducts(
-  inboundText: string,
-  currentProductName: string
-): Promise<boolean> {
-  // MILESTONE 8R — deliberately fails closed toward CAUTION, not
-  // toward "assume it's fine": given the actual stakes here (a real,
-  // observed false denial that damaged trust with a real prospect),
-  // a failed check should escalate, the same as a confirmed "yes." If
-  // this returns true for any reason — a genuine detection or the
-  // check itself being unable to run — the caller treats it as reason
-  // to route to a human rather than risk the less reliable path.
-  if (!process.env.OPENAI_API_KEY) return true;
-
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-  try {
-    const completion = await client.chat.completions.create({
-      model: MODEL,
-      messages: [
-        {
-          role: "system",
-          content:
-            "You judge exactly one thing: does this message ask whether other products exist, beyond the one currently being discussed. Nothing else.",
-        },
-        {
-          role: "user",
-          content: `Product currently being discussed: ${currentProductName}\n\nProspect's message:\n${inboundText}`,
-        },
-      ],
-      temperature: 0,
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "asking_about_other_products",
-          strict: true,
-          schema: ASKING_ABOUT_OTHER_PRODUCTS_SCHEMA,
-        },
-      },
-    });
-
-    const raw = completion.choices[0]?.message?.content;
-    if (!raw) return true; // couldn't get a confirmed answer - escalate rather than assume
-    const parsed = JSON.parse(raw) as { is_asking_about_other_products: boolean };
-    return parsed.is_asking_about_other_products === true;
-  } catch (error) {
-    console.error("[composeReply] isAskingAboutOtherProducts failed:", error);
-    return true; // check itself failed - escalate rather than silently risk the unreliable path
-  }
-}
-
 export async function composeReply(
   input: ComposeReplyInput
 ): Promise<ComposeReplyResult> {
@@ -382,6 +304,33 @@ export async function composeReply(
   // takes a different, but equivalent, form — response_format enforces
   // valid JSON at the API level rather than hoping the prompt wording
   // is followed.
+  // MILESTONE 8S — upgraded from json_object to a strict json_schema.
+  // json_object only ever guaranteed valid JSON syntax, never that the
+  // required fields for a given action were actually present — a real,
+  // meaningfully weaker guarantee than what made the earlier
+  // classification work (classifyCandidate, discoverContactEmail)
+  // reliable. Strict mode can't express "these fields are required only
+  // when action=X" directly, so every field is present in the schema
+  // (nullable where not applicable to a given action) and parseResult()
+  // below still does the actual per-action validation — but the model
+  // can no longer simply omit a field the way json_object allowed.
+  const REPLY_RESULT_SCHEMA = {
+    type: "object" as const,
+    properties: {
+      action: { type: "string" as const, enum: ["reply", "unsubscribe", "escalate"] },
+      reply_interest: {
+        type: "string" as const,
+        enum: ["genuine_interest", "not_interested", "reverse_pitch", "other"],
+      },
+      subject: { type: ["string", "null"] as const },
+      body: { type: ["string", "null"] as const },
+      acknowledgment: { type: ["string", "null"] as const },
+      reason: { type: ["string", "null"] as const },
+    },
+    required: ["action", "reply_interest", "subject", "body", "acknowledgment", "reason"],
+    additionalProperties: false,
+  };
+
   const completion = await client.chat.completions.create({
     model: MODEL,
     messages: [
@@ -389,7 +338,14 @@ export async function composeReply(
       { role: "user", content: buildUserPrompt(input) },
     ],
     temperature: 0.5,
-    response_format: { type: "json_object" },
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "compose_reply_result",
+        strict: true,
+        schema: REPLY_RESULT_SCHEMA,
+      },
+    },
   });
 
   if (completion.usage) {

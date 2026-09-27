@@ -16,50 +16,61 @@ export const dynamic = "force-dynamic";
  * exists at all for this prospect.
  */
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const email = searchParams.get("email") ?? "admin@prfed.com";
+  try {
+    const { searchParams } = new URL(req.url);
+    const email = searchParams.get("email") ?? "admin@prfed.com";
 
-  const db = await getDb();
+    const db = await getDb();
 
-  const prospectResult = await db.execute({
-    sql: `SELECT id, name, email, product_id, sequence_status, updated_at FROM prospects WHERE user_id = ? AND email = ?`,
-    args: [LOCAL_USER_ID, email],
-  });
-
-  const prospects = prospectResult.rows as unknown as Array<{
-    id: string;
-    name: string;
-    email: string;
-    product_id: string | null;
-    sequence_status: string;
-    updated_at: string;
-  }>;
-
-  const results = [];
-  for (const prospect of prospects) {
-    const [inboundResult, sendsResult] = await Promise.all([
-      db.execute({
-        sql: `SELECT id, subject, classification, handled, note, received_at FROM inbound_emails WHERE prospect_id = ? ORDER BY received_at ASC`,
-        args: [prospect.id],
-      }),
-      db.execute({
-        sql: `SELECT id, direction, step, status, subject, sent_at, created_at FROM email_sends WHERE prospect_id = ? ORDER BY COALESCE(sent_at, created_at) ASC`,
-        args: [prospect.id],
-      }),
-    ]);
-
-    results.push({
-      prospectId: prospect.id,
-      sequenceStatus: prospect.sequence_status,
-      inboundEmails: inboundResult.rows,
-      allEmailSends: sendsResult.rows,
+    const prospectResult = await db.execute({
+      sql: `SELECT id, name, email, product_id, sequence_status, updated_at FROM prospects WHERE user_id = ? AND email = ?`,
+      args: [LOCAL_USER_ID, email],
     });
-  }
 
-  return noCacheJson({
-    note: "inboundEmails shows whether each reply was even recorded and what 'handled' resolved to. allEmailSends shows every send/reply row, outbound and inbound, in order - if a reply was composed but not delivered, or never attempted at all, this shows exactly where.",
-    email,
-    prospectsFound: prospects.length,
-    results,
-  });
+    const prospects = prospectResult.rows as unknown as Array<{
+      id: string;
+      name: string;
+      email: string;
+      product_id: string | null;
+      sequence_status: string;
+      updated_at: string;
+    }>;
+
+    const results = [];
+    for (const prospect of prospects) {
+      const [inboundResult, sendsResult] = await Promise.all([
+        db.execute({
+          sql: `SELECT id, subject, classification, handled, note, received_at FROM inbound_emails WHERE prospect_id = ? ORDER BY received_at ASC`,
+          args: [prospect.id],
+        }),
+        db.execute({
+          sql: `SELECT id, direction, step, status, subject, sent_at FROM email_sends WHERE prospect_id = ? ORDER BY sent_at ASC`,
+          args: [prospect.id],
+        }),
+      ]);
+
+      results.push({
+        prospectId: prospect.id,
+        sequenceStatus: prospect.sequence_status,
+        inboundEmails: inboundResult.rows,
+        allEmailSends: sendsResult.rows,
+      });
+    }
+
+    return noCacheJson({
+      note: "inboundEmails shows whether each reply was even recorded and what 'handled' resolved to. allEmailSends shows every send/reply row, outbound and inbound, in order - if a reply was composed but not delivered, or never attempted at all, this shows exactly where.",
+      email,
+      prospectsFound: prospects.length,
+      results,
+    });
+  } catch (error) {
+    console.error("[api/debug/check-reply-trail] GET failed:", error);
+    return noCacheJson(
+      {
+        error: "check-reply-trail failed.",
+        message: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
 }

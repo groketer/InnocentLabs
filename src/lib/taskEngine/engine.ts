@@ -888,9 +888,22 @@ export async function tick(): Promise<void> {
 export async function recoverInterruptedTasks(): Promise<void> {
   const db = await getDb();
 
-  const staleSubtasksResult = await db.execute(
-    `SELECT * FROM agent_tasks WHERE status = 'RUNNING' AND parent_task_id IS NOT NULL`
-  );
+  // FIX (duplicate/premature follow-ups): on Vercel a "cold start" is
+  // just a new instance spinning up, while OTHER instances are still busy
+  // running steps. Resetting every RUNNING subtask here reset steps that
+  // were genuinely mid-flight elsewhere (e.g. an outreach send inside
+  // /api/followups/run-now), so they ran a second time. For an email
+  // send, that second run saw the prospect already "active" and sent
+  // the follow-up immediately. Only reset steps whose heartbeat is
+  // actually stale, the same rule recoverStaleRunningTasks() uses.
+  const coldStartStaleThreshold = new Date(Date.now() - STALE_AFTER_MS).toISOString();
+  const staleSubtasksResult = await db.execute({
+    sql: `SELECT * FROM agent_tasks
+          WHERE status = 'RUNNING'
+            AND parent_task_id IS NOT NULL
+            AND (heartbeat_at IS NULL OR heartbeat_at < ?)`,
+    args: [coldStartStaleThreshold],
+  });
   const staleSubtasks = staleSubtasksResult.rows as unknown as AgentTask[];
 
   for (const s of staleSubtasks) {
@@ -909,9 +922,13 @@ export async function recoverInterruptedTasks(): Promise<void> {
     });
   }
 
-  const staleParentsResult = await db.execute(
-    `SELECT * FROM agent_tasks WHERE status = 'RUNNING' AND parent_task_id IS NULL`
-  );
+  const staleParentsResult = await db.execute({
+    sql: `SELECT * FROM agent_tasks
+          WHERE status = 'RUNNING'
+            AND parent_task_id IS NULL
+            AND (heartbeat_at IS NULL OR heartbeat_at < ?)`,
+    args: [coldStartStaleThreshold],
+  });
   const staleParents = staleParentsResult.rows as unknown as AgentTask[];
 
   // MILESTONE 5A — a real, confirmed root cause this fixes: on Vercel,

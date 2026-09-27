@@ -321,6 +321,24 @@ export const emailCampaignExecutor: TaskExecutor = {
       };
     }
 
+    // FIX (premature follow-ups): defense in depth. The planner only
+    // selects "active" prospects whose next_send_at has passed, but a
+    // subtask can be planned while the prospect is "not_started" and run
+    // after another path (a second campaign task, "send now", or a
+    // re-run step) has already sent the first email. Without this check
+    // that subtask sends follow-up #1 moments after the intro.
+    if (
+      prospect.sequence_status === "active" &&
+      (!prospect.next_send_at ||
+        new Date(prospect.next_send_at).getTime() > Date.now())
+    ) {
+      return {
+        success: true,
+        summary: `Skipped — next email to ${prospect.name} isn't due until ${prospect.next_send_at ?? "a date is scheduled"}.`,
+        resultData: { skipped: true, reason: "not_due_yet" },
+      };
+    }
+
     // MILESTONE 3R — re-check business hours at actual send time, not
     // just at planning time. A subtask can sit queued behind others for a
     // while; by the time it's this one's turn, the window that was open

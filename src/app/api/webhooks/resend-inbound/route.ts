@@ -51,6 +51,31 @@ function extractBareAddress(from: string): string {
   return (match ? match[1] : from).trim().toLowerCase();
 }
 
+/**
+ * MILESTONE 8U — a direct response to a real, confirmed gap: two real
+ * inbound replies vanished completely, with zero trace anywhere —
+ * not in inbound_emails, not in the activity log, nothing. Tracing
+ * through this handler found why: every early-exit failure path
+ * (missing signature headers, bad signature, missing config, failure
+ * to fetch the email body) returns straight to Resend without ever
+ * calling logActivity — only the one outer catch-all did. If any of
+ * these specific paths is what's actually happening, it was
+ * genuinely invisible before this. This helper makes every one of
+ * them leave a real trace.
+ */
+async function logWebhookFailure(message: string): Promise<void> {
+  try {
+    await logActivity({
+      user_id: LOCAL_USER_ID,
+      task_id: null,
+      event_type: "TASK_FAILED",
+      message: `Inbound email webhook rejected the request: ${message}`,
+    });
+  } catch (logError) {
+    console.error("[resend-inbound] Also failed to log the failure:", logError);
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const payload = await req.text();
@@ -60,15 +85,18 @@ export async function POST(req: NextRequest) {
     const svixSignature = req.headers.get("svix-signature");
 
     if (!svixId || !svixTimestamp || !svixSignature) {
+      await logWebhookFailure("Missing Svix headers on the incoming request.");
       return NextResponse.json({ error: "Missing Svix headers." }, { status: 400 });
     }
 
     if (!process.env.RESEND_WEBHOOK_SECRET) {
       console.error("[resend-inbound] RESEND_WEBHOOK_SECRET is not set — cannot verify webhook.");
+      await logWebhookFailure("RESEND_WEBHOOK_SECRET is not configured.");
       return NextResponse.json({ error: "Webhook not configured." }, { status: 500 });
     }
     if (!process.env.RESEND_API_KEY) {
       console.error("[resend-inbound] RESEND_API_KEY is not set — cannot fetch email content.");
+      await logWebhookFailure("RESEND_API_KEY is not configured.");
       return NextResponse.json({ error: "Webhook not configured." }, { status: 500 });
     }
 
@@ -83,6 +111,9 @@ export async function POST(req: NextRequest) {
       });
     } catch (error) {
       console.error("[resend-inbound] Signature verification failed:", error);
+      await logWebhookFailure(
+        `Signature verification failed: ${error instanceof Error ? error.message : String(error)}.`
+      );
       return NextResponse.json({ error: "Invalid signature." }, { status: 400 });
     }
 
@@ -97,6 +128,7 @@ export async function POST(req: NextRequest) {
     const webhookMessageId = (event.data as { message_id?: string })?.message_id ?? null;
 
     if (!emailId) {
+      await logWebhookFailure("No email_id in the event payload.");
       return NextResponse.json({ error: "No email_id in event payload." }, { status: 400 });
     }
 
@@ -104,6 +136,9 @@ export async function POST(req: NextRequest) {
 
     if (fetchError || !email) {
       console.error("[resend-inbound] Could not fetch email content:", fetchError);
+      await logWebhookFailure(
+        `Could not fetch email content for email_id ${emailId}: ${fetchError ? JSON.stringify(fetchError) : "no email returned"}.`
+      );
       return NextResponse.json({ error: "Could not fetch email content." }, { status: 502 });
     }
 

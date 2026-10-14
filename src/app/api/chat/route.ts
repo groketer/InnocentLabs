@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { run, type AgentInputItem } from "@openai/agents";
+import { runAgent, type ChatTurn } from "@/lib/ai/runAgent";
+import { apiKeyEnvName, getAiProvider, isProviderConfigured } from "@/lib/ai/provider";
 import { createInnocentIntelligenceAgent } from "@/agents/masterAgent";
 import { loadKnowledgeBase } from "@/lib/knowledge";
 import { LOCAL_USER_ID } from "@/lib/localUser";
@@ -35,14 +36,13 @@ interface ChatRequestBody {
 
 export async function POST(req: NextRequest) {
   // 1. Make sure the server is configured before doing any work.
-  if (!process.env.OPENAI_API_KEY) {
-    console.error(
-      "[api/chat] OPENAI_API_KEY is not set. Add it to .env.local (see .env.example)."
-    );
+  const provider = await getAiProvider();
+  if (!isProviderConfigured(provider)) {
+    const keyName = apiKeyEnvName(provider);
+    console.error(`[api/chat] ${keyName} is not set. Add it to .env.local (see .env.example).`);
     return NextResponse.json(
       {
-        error:
-          "The server is missing its OpenAI API key. (Developer: set OPENAI_API_KEY in .env.local, restart the dev server.)",
+        error: `The server is missing its ${provider === "anthropic" ? "Anthropic" : "OpenAI"} API key. (Developer: set ${keyName} in Vercel or .env.local, then redeploy or restart.)`,
       },
       { status: 500 }
     );
@@ -108,23 +108,15 @@ export async function POST(req: NextRequest) {
     const agent = createInnocentIntelligenceAgent(knowledgeBase, memoryContext);
 
     // 5. Reconstruct conversation input: prior turns + the new user message.
-    const priorTurns: AgentInputItem[] = history
+    const priorTurns: ChatTurn[] = history
       .filter(
         (turn): turn is ChatMessage =>
           (turn?.role === "user" || turn?.role === "assistant") &&
           typeof turn?.content === "string"
       )
-      .map((turn): AgentInputItem =>
-        turn.role === "user"
-          ? { role: "user", content: turn.content }
-          : {
-              role: "assistant",
-              status: "completed",
-              content: [{ type: "output_text", text: turn.content }],
-            }
-      );
+      .map((turn): ChatTurn => ({ role: turn.role, content: turn.content }));
 
-    const input: AgentInputItem[] = [
+    const input: ChatTurn[] = [
       ...priorTurns,
       { role: "user", content: message },
     ];
@@ -134,25 +126,23 @@ export async function POST(req: NextRequest) {
       userId: LOCAL_USER_ID,
       conversationId,
     };
-    const result = await run(agent, input, { context });
+    const result = await runAgent(agent, input, { context }, { provider });
 
     await recordApiUsage({
       user_id: LOCAL_USER_ID,
       source: "chat",
-      // masterAgent.ts's MODEL constant isn't exported; kept in sync manually.
-      model: "gpt-4.1-mini",
-      input_tokens: result.state.usage.inputTokens,
-      output_tokens: result.state.usage.outputTokens,
+      model: result.model,
+      input_tokens: result.usage.inputTokens,
+      output_tokens: result.usage.outputTokens,
+      web_search_requests: result.usage.webSearchRequests,
     });
 
     // Surface any tasks the agent actually created during this turn, so
     // the UI can render a real, linked task card instead of just text.
     const tasksCreated: Array<{ taskId: string; title: string; status: string }> = [];
-    for (const item of result.newItems) {
-      if (item.type !== "tool_call_output_item") continue;
-      if (typeof item.output !== "string") continue;
+    for (const output of result.toolOutputs) {
       try {
-        const parsed = JSON.parse(item.output);
+        const parsed = JSON.parse(output);
         if (parsed && typeof parsed.taskId === "string") {
           tasksCreated.push({
             taskId: parsed.taskId,

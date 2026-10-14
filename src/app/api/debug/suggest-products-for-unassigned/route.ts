@@ -4,7 +4,8 @@ import { getDb } from "@/lib/db";
 import { markProspectNeedsProductDecision } from "@/lib/models/prospects";
 import { listProductsWithUrl } from "@/lib/models/products";
 import { LOCAL_USER_ID } from "@/lib/localUser";
-import OpenAI from "openai";
+import { completeChat } from "@/lib/ai/completeChat";
+import { apiKeyEnvName, getAiProvider, isProviderConfigured } from "@/lib/ai/provider";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,19 +72,19 @@ export async function POST(_req: NextRequest) {
 }
 
 async function runSuggestions() {
-  if (!process.env.OPENAI_API_KEY) {
-    return noCacheJson({ error: "OPENAI_API_KEY is not set." }, { status: 500 });
+  const provider = await getAiProvider();
+  if (!isProviderConfigured(provider)) {
+    return noCacheJson({ error: `${apiKeyEnvName(provider)} is not set.` }, { status: 500 });
   }
 
   const candidates = await findUnassignedNeedingSuggestion();
   const products = await listProductsWithUrl();
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const results: Array<{ name: string; suggested: string[] | "none" }> = [];
 
   for (const prospect of candidates) {
-    const completion = await client.chat.completions.create({
-      model: MODEL,
+    const completion = await completeChat({
+      openaiModel: MODEL,
       messages: [
         {
           role: "system",
@@ -112,12 +113,12 @@ ${products.map((p) => `- ${p.name}: ${p.description ?? p.category}`).join("\n")}
         },
       ],
       temperature: 0.2,
-      response_format: { type: "json_object" },
+      json: "object",
     });
 
     let candidateNames: string[] = [];
     try {
-      const parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
+      const parsed = JSON.parse(completion.text ?? "{}");
       candidateNames = Array.isArray(parsed.candidates)
         ? parsed.candidates.filter(
             (name: unknown): name is string =>

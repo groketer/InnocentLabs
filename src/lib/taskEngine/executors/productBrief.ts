@@ -26,7 +26,7 @@
  * supported by what was found.
  */
 
-import { Agent, run, webSearchTool } from "@openai/agents";
+import { defineAgent, runAgent } from "@/lib/ai/runAgent";
 import { z } from "zod";
 
 import type { AgentTask } from "@/lib/types";
@@ -164,29 +164,30 @@ async function generateBrief(parent: AgentTask): Promise<StepResult> {
     };
   }
 
-  const briefAgent = new Agent({
+  const briefAgent = defineAgent({
     name: "Innocent Intelligence Product Brief Agent",
-    model: MODEL,
+    openaiModel: MODEL,
     instructions: buildInstructions(),
     // Do NOT specify outputType here — combining structured output
     // enforcement with a live web search tool has previously caused the
     // SDK to reject valid responses before this executor could inspect
     // them (same issue documented in the prospecting executor).
-    tools: [webSearchTool({ searchContextSize: "high" })],
+    webSearch: { searchContextSize: "high" },
   });
 
   const request = `Research this product by visiting its real website:\n\nName: ${product.name}\nURL: ${product.url}`;
 
   let rawOutput: unknown;
   try {
-    const result = await run(briefAgent, request, { maxTurns: 6 });
+    const result = await runAgent(briefAgent, request, { maxTurns: 6 });
 
     await recordApiUsage({
       user_id: parent.user_id,
       source: "product_brief",
-      model: MODEL,
-      input_tokens: result.state.usage.inputTokens,
-      output_tokens: result.state.usage.outputTokens,
+      model: result.model,
+      input_tokens: result.usage.inputTokens,
+      output_tokens: result.usage.outputTokens,
+      web_search_requests: result.usage.webSearchRequests,
     });
 
     rawOutput = result.finalOutput;

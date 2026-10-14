@@ -5,6 +5,7 @@ import type { AppSettings } from "@/lib/models/settings";
 
 interface InfraStatus {
   openai_api_key_configured: boolean;
+  anthropic_api_key_configured?: boolean;
   database_configured: boolean;
   cron_secret_configured: boolean;
   smtp: {
@@ -333,6 +334,41 @@ export function SettingsContent() {
       </div>
 
       <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">
+        <h2 className="text-sm font-semibold text-white">AI provider</h2>
+        <p className="mt-1 text-xs text-white/40">
+          Which AI runs the agent: prospecting research, email writing,
+          replies, and chat. Takes effect within about 30 seconds of saving.
+        </p>
+
+        <label className="mt-4 block max-w-xs">
+          <span className="text-xs text-white/50">Provider</span>
+          <select
+            value={settings.ai_provider}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                ai_provider: e.target.value === "anthropic" ? "anthropic" : "openai",
+              })
+            }
+            className="mt-1 w-full rounded-md border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-white outline-none focus:border-emerald-500/50"
+          >
+            <option value="openai">OpenAI (GPT)</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+          </select>
+        </label>
+
+        {infra &&
+          ((settings.ai_provider === "anthropic" && !infra.anthropic_api_key_configured) ||
+            (settings.ai_provider === "openai" && !infra.openai_api_key_configured)) && (
+            <p className="mt-2 max-w-md text-xs text-amber-300">
+              The {settings.ai_provider === "anthropic" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY"}{" "}
+              environment variable isn&apos;t set, so AI tasks will fail with this provider.
+              Add it in Vercel and redeploy.
+            </p>
+          )}
+      </div>
+
+      <div className="mt-6 rounded-md border border-ink-700 bg-ink-900 p-5">
         <h2 className="text-sm font-semibold text-white">Follow-up behavior</h2>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
@@ -492,6 +528,10 @@ export function SettingsContent() {
           <div className="flex items-center justify-between">
             <span className="text-white/70">OpenAI API key</span>
             <StatusPill ok={infra.openai_api_key_configured} />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-white/70">Anthropic API key</span>
+            <StatusPill ok={Boolean(infra.anthropic_api_key_configured)} />
           </div>
           <div className="flex items-center justify-between">
             <span className="text-white/70">Database</span>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { completeChat } from "@/lib/ai/completeChat";
+import { isAiConfigured } from "@/lib/ai/provider";
 import {
   updateProspect,
   deleteProspect,
@@ -37,7 +38,7 @@ async function checkOtherProductFitAndCleanUp(prospectId: string): Promise<{
     (p) => p.id !== prospect.product_id
   );
 
-  if (otherProducts.length === 0 || !process.env.OPENAI_API_KEY) {
+  if (otherProducts.length === 0 || !(await isAiConfigured())) {
     // No other products to check against, or no way to check — leave
     // the prospect as unqualified rather than guessing.
     return { action: "kept" };
@@ -47,9 +48,8 @@ async function checkOtherProductFitAndCleanUp(prospectId: string): Promise<{
     .map((e) => `- ${e.observation} (source: ${e.source})`)
     .join("\n");
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const completion = await client.chat.completions.create({
-    model: MODEL,
+  const completion = await completeChat({
+    openaiModel: MODEL,
     messages: [
       {
         role: "system",
@@ -97,9 +97,9 @@ ${otherProducts.map((p) => `- ${p.name}: ${p.description ?? p.category}`).join("
     await recordApiUsage({
       user_id: LOCAL_USER_ID,
       source: "prospecting",
-      model: MODEL,
-      input_tokens: completion.usage.prompt_tokens,
-      output_tokens: completion.usage.completion_tokens,
+      model: completion.model,
+      input_tokens: completion.usage.inputTokens,
+      output_tokens: completion.usage.outputTokens,
     });
   }
 
@@ -109,7 +109,7 @@ ${otherProducts.map((p) => `- ${p.name}: ${p.description ?? p.category}`).join("
     candidate_products?: string[];
   };
   try {
-    parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
+    parsed = JSON.parse(completion.text ?? "{}");
   } catch {
     return { action: "kept" };
   }

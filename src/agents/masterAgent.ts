@@ -23,12 +23,11 @@
 * handoffs/tools on the master agent.
   */
 
-import { Agent, webSearchTool } from "@openai/agents";
+import { defineAgent, type AgentSpec } from "@/lib/ai/runAgent";
 import { INNOCENT_INTELLIGENCE_INSTRUCTIONS } from "./instructions";
 import { createTaskTool } from "./tools/createTaskTool";
 import { getProductIntelligenceTool } from "./tools/getProductIntelligenceTool";
 import { getResearchResultTool } from "./tools/getResearchResultTool";
-import type { AgentRunContext } from "./context";
 import { getProspectsTool } from "./tools/getProspectsTool";
 import { getFollowUpsStatusTool } from "./tools/getFollowUpsStatusTool";
 import { saveMemoryTool } from "./tools/saveMemoryTool";
@@ -63,13 +62,13 @@ const MODEL = "gpt-4.1-mini";
     export function createInnocentIntelligenceAgent(
     knowledgeBase: string,
     memoryContext: string = ""
-    ): Agent<AgentRunContext> {
+    ): AgentSpec {
     console.log("[masterAgent] Web search tool enabled");
 
-return new Agent<AgentRunContext>({
+return defineAgent({
 name: "Innocent Intelligence",
 
-model: MODEL,
+openaiModel: MODEL,
 
 instructions: `${INNOCENT_INTELLIGENCE_INSTRUCTIONS}
 
@@ -562,7 +561,7 @@ conversation: a preference Innocent states, recurring business context,
 or a real outcome worth remembering. Do not save routine conversational
 content or one-off task details.`,
 
-tools: [
+functionTools: [
   createTaskTool,
   getProductIntelligenceTool,
   getResearchResultTool,
@@ -578,8 +577,8 @@ tools: [
   getUsageSummaryTool,
   getProductInsightsTool,
   searchProductDocumentsTool,
-  webSearchTool({ searchContextSize: "medium" }),
 ],
+webSearch: { searchContextSize: "medium" },
 
 });
 }

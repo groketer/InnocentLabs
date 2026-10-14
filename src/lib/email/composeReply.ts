@@ -16,7 +16,8 @@
  * risk (legal, financial commitment, hostility), not routine uncertainty.
  */
 
-import OpenAI from "openai";
+import { completeChat } from "@/lib/ai/completeChat";
+import { assertAiConfigured } from "@/lib/ai/provider";
 import type { Prospect } from "@/lib/models/prospects";
 import type { Product } from "@/lib/types";
 import type { EmailSend } from "@/lib/models/emailSends";
@@ -291,11 +292,8 @@ function parseResult(raw: string): ComposeReplyResult {
 export async function composeReply(
   input: ComposeReplyInput
 ): Promise<ComposeReplyResult> {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is not set — cannot compose a reply.");
-  }
+  await assertAiConfigured("compose a reply");
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   // MILESTONE 5E — same reasoning and same confirmed failure mode as
   // composeEmail.ts: the model can ignore a prompt instruction to
@@ -331,34 +329,27 @@ export async function composeReply(
     additionalProperties: false,
   };
 
-  const completion = await client.chat.completions.create({
-    model: MODEL,
+  const completion = await completeChat({
+    openaiModel: MODEL,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: buildUserPrompt(input) },
     ],
     temperature: 0.5,
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "compose_reply_result",
-        strict: true,
-        schema: REPLY_RESULT_SCHEMA,
-      },
-    },
+    json: { name: "compose_reply_result", schema: REPLY_RESULT_SCHEMA },
   });
 
   if (completion.usage) {
     await recordApiUsage({
       user_id: LOCAL_USER_ID,
       source: "reply_compose",
-      model: MODEL,
-      input_tokens: completion.usage.prompt_tokens,
-      output_tokens: completion.usage.completion_tokens,
+      model: completion.model,
+      input_tokens: completion.usage.inputTokens,
+      output_tokens: completion.usage.outputTokens,
     });
   }
 
-  const raw = completion.choices[0]?.message?.content;
+  const raw = completion.text;
 
   if (!raw) {
     throw new Error("Reply composer returned no output.");

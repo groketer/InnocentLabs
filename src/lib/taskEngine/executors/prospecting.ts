@@ -76,7 +76,7 @@
  * - uses private/non-public contact information.
  */
 
-import { Agent, run, webSearchTool } from "@openai/agents";
+import { defineAgent, runAgent } from "@/lib/ai/runAgent";
 import { z } from "zod";
 
 import type { AgentTask, Product } from "@/lib/types";
@@ -1148,11 +1148,11 @@ async function refreshLivePortfolio():
     );
 
   const refreshAgent =
-    new Agent({
+    defineAgent({
       name:
         "Innocent Intelligence Marketplace Portfolio Refresh Agent",
 
-      model: MODEL,
+      openaiModel: MODEL,
 
       instructions: `
 You maintain live awareness of the Innocent Labs portfolio.
@@ -1215,11 +1215,7 @@ Do not use Markdown fences.
 Do not add commentary outside the JSON.
 `,
 
-      tools: [
-        webSearchTool({
-          searchContextSize: "high",
-        }),
-      ],
+      webSearch: { searchContextSize: "high" },
 
       // MILESTONE 5E — same fix, same reasoning as composeEmail.ts:
       // guarantees valid, schema-matching JSON at the API level rather
@@ -1230,7 +1226,7 @@ Do not add commentary outside the JSON.
 
   try {
     const result =
-      await run(
+      await runAgent(
         refreshAgent,
         `
 Inspect ${INNOCENT_MARKETPLACE_URL} now.
@@ -1247,9 +1243,10 @@ JSON object.
     await recordApiUsage({
       user_id: LOCAL_USER_ID,
       source: "portfolio_refresh",
-      model: MODEL,
-      input_tokens: result.state.usage.inputTokens,
-      output_tokens: result.state.usage.outputTokens,
+      model: result.model,
+      input_tokens: result.usage.inputTokens,
+      output_tokens: result.usage.outputTokens,
+      web_search_requests: result.usage.webSearchRequests,
     });
 
     const validation =
@@ -2511,9 +2508,9 @@ async function classifyCandidate(
   candidateDescription: string,
   product: Product
 ): Promise<CandidateClassification | null> {
-  const classificationAgent = new Agent({
+  const classificationAgent = defineAgent({
     name: "Prospect Classification Agent",
-    model: MODEL,
+    openaiModel: MODEL,
     instructions: `You judge exactly one candidate against exactly one product. Nothing else.
 
 PRODUCT: ${product.name}
@@ -2530,11 +2527,10 @@ someone generally successful or visible?
 
 Return only the required JSON fields. No other output.`,
     outputType: CandidateClassificationSchema,
-    tools: [],
   });
 
   try {
-    const result = await run(classificationAgent, "Classify this candidate now.");
+    const result = await runAgent(classificationAgent, "Classify this candidate now.");
     const parsed = CandidateClassificationSchema.safeParse(result.finalOutput);
     return parsed.success ? parsed.data : null;
   } catch (error) {
@@ -2579,9 +2575,9 @@ async function discoverContactEmail(
   candidateName: string,
   candidateDescription: string
 ): Promise<ContactDiscoveryResult | null> {
-  const discoveryAgent = new Agent({
+  const discoveryAgent = defineAgent({
     name: "Contact Discovery Agent",
-    model: MODEL,
+    openaiModel: MODEL,
     instructions: `You have one job: find a real, genuine, publicly stated email
 address for exactly one specific person. Nothing else.
 
@@ -2601,15 +2597,11 @@ outcome, not a failure to fix by guessing instead.
 
 Return only the required JSON fields. No other output.`,
     outputType: ContactDiscoverySchema,
-    tools: [
-      webSearchTool({
-        searchContextSize: "medium",
-      }),
-    ],
+    webSearch: { searchContextSize: "medium" },
   });
 
   try {
-    const result = await run(discoveryAgent, "Find this person's real email now.");
+    const result = await runAgent(discoveryAgent, "Find this person's real email now.");
     const parsed = ContactDiscoverySchema.safeParse(result.finalOutput);
     return parsed.success ? parsed.data : null;
   } catch (error) {
@@ -3032,11 +3024,11 @@ Do not return explanatory prose outside the JSON object.
     /* ---------------------------------------------------------------------- */
 
     const prospectingAgent =
-      new Agent({
+      defineAgent({
         name:
           "Innocent Intelligence Prospecting Agent",
 
-        model: MODEL,
+        openaiModel: MODEL,
 
         instructions:
           buildInstructions(),
@@ -3050,17 +3042,12 @@ Do not return explanatory prose outside the JSON object.
          * which could reject the response before this executor could inspect
          * it.
          */
-        tools: [
-          webSearchTool({
-            searchContextSize:
-              "high",
-          }),
-        ],
+        webSearch: { searchContextSize: "high" },
       });
 
     try {
       const result =
-        await run(
+        await runAgent(
           prospectingAgent,
           request,
           {
@@ -3072,9 +3059,10 @@ Do not return explanatory prose outside the JSON object.
       await recordApiUsage({
         user_id: parent.user_id,
         source: "prospecting",
-        model: MODEL,
-        input_tokens: result.state.usage.inputTokens,
-        output_tokens: result.state.usage.outputTokens,
+        model: result.model,
+        input_tokens: result.usage.inputTokens,
+        output_tokens: result.usage.outputTokens,
+        web_search_requests: result.usage.webSearchRequests,
       });
 
       const rawOutput =
@@ -3645,7 +3633,7 @@ Do not return explanatory prose outside the JSON object.
           source_method:
             "OpenAI Agents SDK hosted web search",
 
-          model:
+          openaiModel:
             MODEL,
 
           max_prospects_per_round:

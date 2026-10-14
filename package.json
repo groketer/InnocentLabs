@@ -10,6 +10,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.134.0",
     "@neondatabase/serverless": "^0.10.4",
     "@openai/agents": "^0.17.0",
     "@upstash/qstash": "^2.7.20",

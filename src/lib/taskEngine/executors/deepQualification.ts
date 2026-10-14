@@ -27,7 +27,7 @@
 import type { AgentTask } from "@/lib/types";
 import type { StepResult, SubtaskPlanItem, TaskExecutor } from "../types";
 
-import { Agent, run, webSearchTool } from "@openai/agents";
+import { defineAgent, runAgent } from "@/lib/ai/runAgent";
 import {
   listProspects,
   getProspectById,
@@ -245,11 +245,11 @@ export const deepQualificationExecutor: TaskExecutor = {
       };
     }
 
-    const agent = new Agent({
+    const agent = defineAgent({
       name: "Deep Qualification Reviewer",
-      model: MODEL,
+      openaiModel: MODEL,
       instructions: SYSTEM_PROMPT,
-      tools: [webSearchTool()],
+      webSearch: true,
     });
 
     const prompt = buildUserPrompt({
@@ -267,14 +267,15 @@ export const deepQualificationExecutor: TaskExecutor = {
 
     let decision: DeepQualificationDecision;
     try {
-      const result = await run(agent, prompt, { maxTurns: MAX_TURNS });
+      const result = await runAgent(agent, prompt, { maxTurns: MAX_TURNS });
 
       await recordApiUsage({
         user_id: parent.user_id,
         source: "deep_qualification",
-        model: MODEL,
-        input_tokens: result.state.usage.inputTokens,
-        output_tokens: result.state.usage.outputTokens,
+        model: result.model,
+        input_tokens: result.usage.inputTokens,
+        output_tokens: result.usage.outputTokens,
+        web_search_requests: result.usage.webSearchRequests,
       });
 
       const raw = result.finalOutput;

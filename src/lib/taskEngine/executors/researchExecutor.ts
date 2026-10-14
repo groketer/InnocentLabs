@@ -23,7 +23,7 @@
  * It performs no consequential external actions.
  */
 
-import { Agent, run, webSearchTool } from "@openai/agents";
+import { defineAgent, runAgent } from "@/lib/ai/runAgent";
 
 import type { AgentTask } from "@/lib/types";
 import type { StepResult, TaskExecutor } from "../types";
@@ -724,19 +724,15 @@ export const researchExecutor: TaskExecutor = {
       };
     }
 
-    const researchAgent = new Agent({
+    const researchAgent = defineAgent({
       name: "Innocent Intelligence Research Agent",
-      model: MODEL,
+      openaiModel: MODEL,
       instructions: buildResearchInstructions(),
-      tools: [
-        webSearchTool({
-          searchContextSize: "high",
-        }),
-      ],
+      webSearch: { searchContextSize: "high" },
     });
 
     try {
-      const result = await run(
+      const result = await runAgent(
         researchAgent,
         researchRequest,
         {
@@ -769,8 +765,10 @@ export const researchExecutor: TaskExecutor = {
           research_question: researchRequest,
           report,
           source_method:
-            "OpenAI Agents SDK hosted web search",
-          model: MODEL,
+            result.provider === "anthropic"
+              ? "Claude web search"
+              : "OpenAI Agents SDK hosted web search",
+          model: result.model,
           completed_at:
             new Date().toISOString(),
           evidence_status:

@@ -119,6 +119,14 @@ export interface AppSettings {
    * 60 while leaving reasonable room for that mechanical reality.
    */
   max_prospecting_minutes_per_session: number;
+
+  /**
+   * Which AI provider runs the agent: "openai" (the original) or
+   * "anthropic" (Claude). Every AI call reads this via
+   * src/lib/ai/provider.ts. The matching API key must be set in the
+   * environment (OPENAI_API_KEY / ANTHROPIC_API_KEY).
+   */
+  ai_provider: "openai" | "anthropic";
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -147,6 +155,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   focus_expires_at: null,
   max_prospecting_runs_per_day: 3,
   max_prospecting_minutes_per_session: 30,
+  ai_provider: "openai",
 };
 
 const SETTINGS_KEYS = Object.keys(DEFAULT_SETTINGS) as Array<
@@ -170,6 +179,11 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
 // forcing them through logic built for scalar values.
 const JSON_ARRAY_KEYS = new Set<keyof AppSettings>(["focus_product_ids"]);
 const NULLABLE_STRING_KEYS = new Set<keyof AppSettings>(["focus_expires_at"]);
+// Settings whose value is one of a fixed set of strings; anything else
+// stored falls back to the default.
+const ENUM_KEYS: Partial<Record<keyof AppSettings, readonly string[]>> = {
+  ai_provider: ["openai", "anthropic"],
+};
 
 function coerce(key: keyof AppSettings, raw: string): number | boolean | string[] | string | null {
   if (BOOLEAN_KEYS.has(key)) {
@@ -185,6 +199,10 @@ function coerce(key: keyof AppSettings, raw: string): number | boolean | string[
   }
   if (NULLABLE_STRING_KEYS.has(key)) {
     return raw || null;
+  }
+  const allowed = ENUM_KEYS[key];
+  if (allowed) {
+    return allowed.includes(raw) ? raw : (DEFAULT_SETTINGS[key] as string);
   }
   const n = Number(raw);
   return Number.isFinite(n) ? n : (DEFAULT_SETTINGS[key] as number);
@@ -236,6 +254,7 @@ export interface UpdateSettingsInput {
   focus_expires_at?: string | null;
   max_prospecting_runs_per_day?: number;
   max_prospecting_minutes_per_session?: number;
+  ai_provider?: "openai" | "anthropic";
 }
 
 function validate(input: UpdateSettingsInput): void {
@@ -326,6 +345,14 @@ function validate(input: UpdateSettingsInput): void {
   ) {
     throw new Error("max_prospecting_minutes_per_session must be a whole number between 5 and 480.");
   }
+
+  if (
+    input.ai_provider !== undefined &&
+    input.ai_provider !== "openai" &&
+    input.ai_provider !== "anthropic"
+  ) {
+    throw new Error('ai_provider must be "openai" or "anthropic".');
+  }
 }
 
 export async function updateSettings(
@@ -379,6 +406,7 @@ export async function updateSettings(
 export function getInfraStatus() {
   return {
     openai_api_key_configured: Boolean(process.env.OPENAI_API_KEY),
+    anthropic_api_key_configured: Boolean(process.env.ANTHROPIC_API_KEY),
     database_configured: Boolean(
       process.env.DATABASE_URL || process.env.POSTGRES_URL
     ),

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import OpenAI from "openai";
+import { completeChat } from "@/lib/ai/completeChat";
+import { isAiConfigured, getAiProvider, apiKeyEnvName } from "@/lib/ai/provider";
 import { listChatMessages } from "@/lib/models/chat";
 import { saveConversationSummary } from "@/lib/models/memory";
 import { recordApiUsage } from "@/lib/models/apiUsage";
@@ -47,17 +48,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ summarized: false, reason: "Too short to summarize." });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({ summarized: false, reason: "OPENAI_API_KEY not configured." });
+    if (!(await isAiConfigured())) {
+      return NextResponse.json({
+        summarized: false,
+        reason: `${apiKeyEnvName(await getAiProvider())} not configured.`,
+      });
     }
 
     const transcript = messages
       .map((m) => `${m.role === "user" ? "Innocent" : "Agent"}: ${m.content}`)
       .join("\n\n");
 
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const completion = await client.chat.completions.create({
-      model: MODEL,
+    const completion = await completeChat({
+      openaiModel: MODEL,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: transcript },
@@ -65,7 +68,7 @@ export async function POST(req: NextRequest) {
       temperature: 0.3,
     });
 
-    const summary = completion.choices[0]?.message?.content?.trim();
+    const summary = completion.text?.trim();
 
     if (!summary) {
       return NextResponse.json({ summarized: false, reason: "Model returned no summary." });
@@ -82,9 +85,9 @@ export async function POST(req: NextRequest) {
       await recordApiUsage({
         user_id: LOCAL_USER_ID,
         source: "chat",
-        model: MODEL,
-        input_tokens: completion.usage.prompt_tokens,
-        output_tokens: completion.usage.completion_tokens,
+        model: completion.model,
+        input_tokens: completion.usage.inputTokens,
+        output_tokens: completion.usage.outputTokens,
       });
     }
 

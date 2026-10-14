@@ -4,6 +4,7 @@ import {
   updateSettings,
   getInfraStatus,
 } from "@/lib/models/settings";
+import { clearAiProviderCache } from "@/lib/ai/provider";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,6 +30,9 @@ export async function PATCH(req: NextRequest) {
   try {
     const body = await req.json();
     const settings = await updateSettings(body);
+    // A provider switch should apply right away on this instance rather
+    // than after the provider cache expires.
+    clearAiProviderCache();
     return NextResponse.json({ settings });
   } catch (error) {
     console.error("[api/settings] PATCH failed:", error);

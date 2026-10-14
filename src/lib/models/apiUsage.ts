@@ -19,7 +19,16 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { input: number; output: number
   "gpt-4.1-mini": { input: 0.4, output: 1.6 },
   "gpt-4.1-nano": { input: 0.1, output: 0.4 },
   "gpt-4.1": { input: 2.0, output: 8.0 },
+  // Claude (Anthropic) — used when Settings → AI provider is "anthropic".
+  // Haiku 5.5 is the rate for prompts up to 100K tokens; larger prompts
+  // are billed at $0.50 / $2.50 (handled in estimateCost below).
+  "claude-haiku-5-5": { input: 0.1, output: 0.5 },
+  "claude-sonnet-5-5": { input: 2.0, output: 10.0 },
+  "claude-opus-5-5": { input: 4.0, output: 20.0 },
 };
+
+/** Claude's web search is billed per search on top of tokens: $10 per 1,000. */
+const CLAUDE_WEB_SEARCH_COST_USD = 0.01;
 
 const DEFAULT_PRICING = PRICING_PER_MILLION_TOKENS["gpt-4.1-mini"];
 
@@ -34,9 +43,24 @@ export type UsageSource =
   | "content_draft"
   | "chat";
 
-function estimateCost(model: string, inputTokens: number, outputTokens: number): number {
-  const rate = PRICING_PER_MILLION_TOKENS[model] ?? DEFAULT_PRICING;
-  return (inputTokens / 1_000_000) * rate.input + (outputTokens / 1_000_000) * rate.output;
+function estimateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  webSearchRequests = 0
+): number {
+  let rate = PRICING_PER_MILLION_TOKENS[model] ?? DEFAULT_PRICING;
+  // Haiku 5.5's long-prompt tier. Usage here is summed across an agent
+  // run's requests, so this is an approximation: it only switches tiers
+  // when the whole run's input is large.
+  if (model === "claude-haiku-5-5" && inputTokens > 100_000) {
+    rate = { input: 0.5, output: 2.5 };
+  }
+  return (
+    (inputTokens / 1_000_000) * rate.input +
+    (outputTokens / 1_000_000) * rate.output +
+    webSearchRequests * CLAUDE_WEB_SEARCH_COST_USD
+  );
 }
 
 export async function recordApiUsage(input: {
@@ -45,10 +69,17 @@ export async function recordApiUsage(input: {
   model: string;
   input_tokens: number;
   output_tokens: number;
+  /** Claude web searches in this call (billed per search). Omit for OpenAI. */
+  web_search_requests?: number;
 }): Promise<void> {
   try {
     const db = await getDb();
-    const cost = estimateCost(input.model, input.input_tokens, input.output_tokens);
+    const cost = estimateCost(
+      input.model,
+      input.input_tokens,
+      input.output_tokens,
+      input.web_search_requests ?? 0
+    );
 
     await db.execute({
       sql: `

@@ -27,7 +27,9 @@
  * unconditionally afterward.
  */
 
-import { Agent, run, tool, webSearchTool } from "@openai/agents";
+import { tool } from "@openai/agents";
+import { defineAgent, runAgent } from "@/lib/ai/runAgent";
+import { assertAiConfigured } from "@/lib/ai/provider";
 import { z } from "zod";
 import type { Prospect } from "@/lib/models/prospects";
 import type { Product } from "@/lib/types";
@@ -316,29 +318,29 @@ Never fabricate a passage that wasn't actually returned here.
 export async function composeOutreachEmail(
   input: ComposeEmailInput
 ): Promise<ComposeEmailResult> {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY is not set — cannot compose email content.");
-  }
+  await assertAiConfigured("compose email content");
 
-  const agent = new Agent({
+  const agent = defineAgent({
     name: "Email Composer",
-    model: MODEL,
+    openaiModel: MODEL,
     instructions: SYSTEM_PROMPT,
-    tools: [webSearchTool(), buildKnowledgeSearchTool(input.product.id)],
+    webSearch: true,
+    functionTools: [buildKnowledgeSearchTool(input.product.id)],
     outputType: ComposeEmailOutputSchema,
   });
 
-  const result = await run(agent, buildUserPrompt(input), {
+  const result = await runAgent(agent, buildUserPrompt(input), {
     maxTurns: MAX_TURNS,
   });
 
-  const usage = result.state.usage;
+  const usage = result.usage;
   await recordApiUsage({
     user_id: LOCAL_USER_ID,
     source: "email_compose",
-    model: MODEL,
+    model: result.model,
     input_tokens: usage.inputTokens,
     output_tokens: usage.outputTokens,
+    web_search_requests: usage.webSearchRequests,
   });
 
   const output = result.finalOutput;

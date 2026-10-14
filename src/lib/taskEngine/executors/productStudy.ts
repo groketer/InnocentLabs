@@ -18,7 +18,8 @@
 import type { AgentTask } from "@/lib/types";
 import type { StepResult, TaskExecutor } from "../types";
 
-import OpenAI from "openai";
+import { completeChat } from "@/lib/ai/completeChat";
+import { isAiConfigured, getAiProvider, apiKeyEnvName } from "@/lib/ai/provider";
 import { listProducts, getProductById } from "@/lib/models/products";
 import { createQuestion, createSuggestion } from "@/lib/models/agentQuestions";
 import { recordApiUsage } from "@/lib/models/apiUsage";
@@ -61,10 +62,10 @@ async function studyProduct(productId: string): Promise<StepResult> {
     return { success: false, summary: "Product not found.", errorMessage: "Product not found." };
   }
 
-  if (!process.env.OPENAI_API_KEY) {
+  if (!(await isAiConfigured())) {
     return {
       success: false,
-      summary: "OPENAI_API_KEY not configured — cannot run product study.",
+      summary: `${apiKeyEnvName(await getAiProvider())} not configured — cannot run product study.`,
       transientFailure: true,
     };
   }
@@ -83,9 +84,8 @@ KNOWN UNKNOWNS: ${product.unknowns ?? "(none)"}
 SUPPLEMENTARY KNOWLEDGE: ${product.supplementary_knowledge ?? "(none)"}
 `.trim();
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const completion = await client.chat.completions.create({
-    model: MODEL,
+  const completion = await completeChat({
+    openaiModel: MODEL,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: knowledgeSummary },
@@ -97,15 +97,15 @@ SUPPLEMENTARY KNOWLEDGE: ${product.supplementary_knowledge ?? "(none)"}
     await recordApiUsage({
       user_id: LOCAL_USER_ID,
       source: "prospecting",
-      model: MODEL,
-      input_tokens: completion.usage.prompt_tokens,
-      output_tokens: completion.usage.completion_tokens,
+      model: completion.model,
+      input_tokens: completion.usage.inputTokens,
+      output_tokens: completion.usage.outputTokens,
     });
   }
 
   let parsed: { questions?: string[]; suggestions?: string[] };
   try {
-    parsed = JSON.parse(completion.choices[0]?.message?.content ?? "{}");
+    parsed = JSON.parse(completion.text ?? "{}");
   } catch {
     return { success: false, summary: "Could not parse product study response.", transientFailure: true };
   }

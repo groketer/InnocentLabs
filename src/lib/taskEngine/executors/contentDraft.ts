@@ -16,7 +16,8 @@
  * one don't need to re-research it every time.
  */
 
-import OpenAI from "openai";
+import { completeChat } from "@/lib/ai/completeChat";
+import { isAiConfigured, getAiProvider, apiKeyEnvName } from "@/lib/ai/provider";
 import type { AgentTask } from "@/lib/types";
 import type { StepResult, SubtaskPlanItem, TaskExecutor } from "../types";
 
@@ -99,11 +100,12 @@ async function extractRequestedProductName(task: AgentTask): Promise<string | nu
 }
 
 async function generateDraft(parent: AgentTask): Promise<StepResult> {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!(await isAiConfigured())) {
+    const keyName = apiKeyEnvName(await getAiProvider());
     return {
       success: false,
-      summary: "Cannot draft content — OPENAI_API_KEY is not set.",
-      errorMessage: "OPENAI_API_KEY is not set.",
+      summary: `Cannot draft content — ${keyName} is not set.`,
+      errorMessage: `${keyName} is not set.`,
       transientFailure: false,
     };
   }
@@ -128,29 +130,28 @@ async function generateDraft(parent: AgentTask): Promise<StepResult> {
     };
   }
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  const completion = await client.chat.completions.create({
-    model: MODEL,
+  const completion = await completeChat({
+    openaiModel: MODEL,
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: buildUserPrompt(product) },
     ],
     temperature: 0.6,
-    response_format: { type: "json_object" },
+    json: "object",
   });
 
   if (completion.usage) {
     await recordApiUsage({
       user_id: parent.user_id,
       source: "content_draft",
-      model: MODEL,
-      input_tokens: completion.usage.prompt_tokens,
-      output_tokens: completion.usage.completion_tokens,
+      model: completion.model,
+      input_tokens: completion.usage.inputTokens,
+      output_tokens: completion.usage.outputTokens,
     });
   }
 
-  const raw = completion.choices[0]?.message?.content;
+  const raw = completion.text;
   if (!raw) {
     return {
       success: false,

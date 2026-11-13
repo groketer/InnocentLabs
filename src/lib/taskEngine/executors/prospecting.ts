@@ -78,7 +78,9 @@
 
 import { defineAgent, runAgent } from "@/lib/ai/runAgent";
 import {
+  CANDIDATES_PER_ROUND,
   CONTACT_DISCOVERY_MAX_TURNS,
+  MAX_PROSPECTING_ROUNDS,
   PROSPECTS_TARGET_PER_RUN,
   SEARCH_BUDGET,
 } from "@/lib/ai/searchBudget";
@@ -150,8 +152,56 @@ const MAX_OUTPUT_CHARS = 60_000;
 // different ones. PROSPECTING_ROUNDS × MAX_PROSPECTS_PER_ROUND gives
 // meaningful headroom above 20 to absorb duplicates and candidates without
 // a verifiable public email.
-const PROSPECTING_ROUNDS = 4;
-const MAX_PROSPECTS_PER_ROUND = 8;
+// Goal-driven since the "at least 10 per run" change: up to
+// MAX_PROSPECTING_ROUNDS rounds, stopping once PROSPECTS_TARGET_PER_RUN
+// new prospects are saved (both in src/lib/ai/searchBudget.ts).
+const PROSPECTING_ROUNDS = MAX_PROSPECTING_ROUNDS;
+const MAX_PROSPECTS_PER_ROUND = CANDIDATES_PER_ROUND;
+
+/**
+ * A different place to look in each round. Without this every round ran
+ * the same searches and kept surfacing the same easy-to-find people, who
+ * were then thrown away as duplicates. Angles that look for
+ * organizations are skipped for individuals-only products.
+ */
+export function roundSearchAngle(round: number, product: Product): string {
+  const individualsOnly = product.require_individual_prospects;
+  const angles: string[] = [
+    `Search for people who are visibly experiencing the problem this product
+solves right now, in their own words: recent posts, profiles and pages
+where they describe it.`,
+    individualsOnly
+      ? `Search for individuals offering their own services or work for pay
+(freelance marketplaces, "for hire" posts, personal portfolio sites):
+they publish contact details because being reachable is the point.`
+      : `Search for ORGANIZATIONS THAT SERVE this product's audience:
+communities, associations, training programmes, schools and university
+departments, NGOs, accelerators, coworking spaces, clubs. They publish
+contact emails on their Contact/About/Team pages, and one organization
+can reach many people in the audience.`,
+    `Search for independent professionals, creators and small businesses
+in this audience who run their OWN website (personal sites usually have
+a Contact page with an email).`,
+    `Search public directories and listings of this audience: member
+directories, speaker or mentor lists, exhibitor lists, alumni pages,
+business directories. Listings often include contact emails.`,
+    `Search recent news articles, blog posts, podcast guest pages and event
+pages that feature members of this audience by name, then find each
+person's or organization's own website.`,
+    `Search in a DIFFERENT city, country or region than earlier rounds
+(within any geographic focus stated for this product), using local terms
+and local platforms.`,
+    individualsOnly
+      ? `Search community and forum posts from the last 12 months where people
+ask for help with this exact problem and link their own site or profile.`
+      : `Search for small and medium businesses whose own customers or staff
+are this product's audience and that publish a general contact email.`,
+    `Try search terms and synonyms that earlier rounds would not have used:
+different job titles, life situations, industry terms and phrasings
+for the same need.`,
+  ];
+  return angles[(round - 1) % angles.length];
+}
 
 /**
  * Defensive upper bound on evidence items stored for one prospect.
@@ -1128,7 +1178,7 @@ be public.`
 }
 MANDATORY AUDIENCE-FIT CHECK — before including any candidate:
 
-Before including any prospect, explicitly check: does ${product.audience ? "the stated audience above" : "what you observed about who this product is actually for"} describe THIS specific candidate, or are they simply someone who is generally successful, senior, or visible enough to be easy to find? A well-known CEO of an unrelated company is not automatically a better prospect than a less prominent individual who is genuinely the actual described audience. If the candidate does not match the actual described audience, exclude them — regardless of how credible or easy-to-justify they otherwise look.`;
+Before including any prospect, explicitly check: does ${product.audience ? "the stated audience above" : "what you observed about who this product is actually for"} describe THIS specific candidate, or are they simply someone who is generally successful, senior, or visible enough to be easy to find? A well-known CEO of an unrelated company is not automatically a better prospect than a less prominent individual who is genuinely the actual described audience. Include candidates who plausibly belong to the audience, or organizations that serve or reach it, even when the match isn't certain. Exclude only clear mismatches: people or organizations with no real connection to the problem this product solves.`;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1754,13 +1804,16 @@ Do NOT:
 PROSPECT COUNT
 ==================================================
 
-Return UP TO ${MAX_PROSPECTS_PER_ROUND} strong prospects this round.
+Aim to return ${MAX_PROSPECTS_PER_ROUND} prospects this round.
 
-THIS IS A CEILING, NOT A QUOTA.
+Keep searching until you have that many, or until you genuinely cannot
+find more who meet the rules. Many candidates are dropped later (for
+example when no verified email can be found), so returning only one or
+two leaves the run short.
 
-Do NOT pad the result.
-
-It is better to return 2 strong contactable prospects than ${MAX_PROSPECTS_PER_ROUND} weak ones.
+Do not pad with candidates who fail the rules: every prospect must still
+be relevant, evidence-backed, a plausible member of the audience and not
+a competitor.
 
 ==================================================
 EVIDENCE REQUIREMENT
@@ -1981,15 +2034,11 @@ Ask:
 14. If I included an email, is it a legitimate publicly published address
     supported by research evidence? (If I found none, "email" is empty.)
 
-15. Would I still call this entity a prospect if I removed the sentence saying
-    that it "could benefit" from the product?
+15. Is there a concrete reason this entity would plausibly want or use the
+    product: they have the problem it solves, or they serve people who do?
 
-If the answer to question 15 is NO, DO NOT include the entity.
-
-It is better to return 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, or 10 strong contactable
-prospects than to pad the result with weak organizations or individuals.
-
-Return only the prospects that survive this standard.
+If the answer to question 15 is NO, do not include the entity. If it is
+plausibly yes, include them; certainty is not required.
 `;
 }
 
@@ -2503,7 +2552,7 @@ const CandidateClassificationSchema = z.object({
   is_audience_fit: z
     .boolean()
     .describe(
-      "true if this specific candidate genuinely matches the product's actual described audience — not merely that they are a generally successful or visible person. false otherwise."
+      "true if this candidate plausibly belongs to the product's audience, or serves or reaches it (partial or likely fits count). false only when they clearly fall outside it, e.g. merely successful or visible with no link to the problem."
     ),
   audience_fit_reason: z.string().describe("One sentence explaining the determination above."),
 });
@@ -2535,12 +2584,14 @@ Decide:
 1. Is this candidate a competitor (sells something that does roughly the
    same job, to roughly the same buyer, as the product above)?
 2. Is this candidate a plausible member of the product's audience: someone
-   who has the problem the product solves, or an organization that serves
-   people who have it? Not just someone generally successful or visible.
+   who has (or likely has) the problem the product solves, or an
+   organization that serves or reaches people who have it? Not just
+   someone generally successful or visible with no link to the problem.
 
 If the audience above is "Unknown", infer it from the description, problem
-and category. Then answer is_audience_fit true unless the candidate clearly
-falls outside that audience; uncertainty alone is not a reason for false.
+and category. Answer is_audience_fit true whenever the candidate plausibly
+fits, including partial or likely fits; answer false only when they clearly
+fall outside the audience. Uncertainty alone is not a reason for false.
 
 Return only the required JSON fields. No other output.`,
     outputType: CandidateClassificationSchema,
@@ -3063,6 +3114,9 @@ ROUND CONTEXT
 
 This is round ${roundNumber} of ${totalRounds} of prospecting for this product within the same overall task.
 
+WHERE TO LOOK THIS ROUND:
+${roundSearchAngle(Number(roundNumber) || 1, product)}
+
 PROSPECTS ALREADY FOUND IN EARLIER ROUNDS FOR THIS PRODUCT
 (find NEW, DIFFERENT prospects — do not return any of these again):
 
@@ -3104,15 +3158,15 @@ IMPORTANT:
 - Prospects may be INDIVIDUALS or ORGANIZATIONS.
 - Do not assume an organization is required.
 - Actually perform web research.
-- Return ONLY prospects with legitimate publicly published email addresses.
-- Every email must have public provenance.
-- Do not infer email addresses.
-- Do not guess email addresses.
-- Do not fabricate email addresses.
-- Do not include a prospect without contactable public email evidence.
-- Return UP TO ${MAX_PROSPECTS_PER_ROUND} strong prospects this round.
-- This is a ceiling, not a quota.
-- Do not pad the result with weak prospects.
+- Include each prospect's publicly published email when you find it, with
+  its source in the evidence.
+- If you could not find a strong prospect's email, still include them with
+  "email" empty and their website or profile URL: a separate step searches
+  for it, and prospects without a verified email are discarded there.
+- Do not infer, guess or fabricate email addresses.
+- Aim for ${MAX_PROSPECTS_PER_ROUND} prospects this round; return fewer only
+  when you genuinely cannot find more who meet the rules.
+- Do not pad the result with prospects who fail the rules.
 - Do not repeat anyone listed above as already found.
 - Do not perform outreach.
 

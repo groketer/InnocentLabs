@@ -3,7 +3,9 @@
  * Run: npx tsx scripts/test-prospecting-relaxed.ts
  */
 import assert from "node:assert/strict";
-import { normalizeCandidate } from "../src/lib/taskEngine/executors/prospecting";
+import { normalizeCandidate, roundSearchAngle } from "../src/lib/taskEngine/executors/prospecting";
+import { MAX_PROSPECTING_ROUNDS, PROSPECTS_TARGET_PER_RUN } from "../src/lib/ai/searchBudget";
+import type { Product } from "../src/lib/types";
 
 let passed = 0;
 function test(name: string, body: () => void) {
@@ -56,6 +58,25 @@ test("still discarded: no evidence, no fit reason, no name, invalid type", () =>
   assert.equal(normalizeCandidate({ ...base, fit_reason: "" }), null);
   assert.equal(normalizeCandidate({ ...base, name: " " }), null);
   assert.equal(normalizeCandidate({ ...base, prospect_type: "alien" }), null);
+});
+
+test("each of the 8 rounds searches a different angle", () => {
+  const product = { require_individual_prospects: false } as Product;
+  const angles = Array.from({ length: MAX_PROSPECTING_ROUNDS }, (_, i) => roundSearchAngle(i + 1, product));
+  assert.equal(new Set(angles).size, MAX_PROSPECTING_ROUNDS);
+  assert.ok(angles.some((a) => a.includes("ORGANIZATIONS THAT SERVE")));
+});
+
+test("individuals-only products are never sent looking for organizations", () => {
+  const product = { require_individual_prospects: true } as Product;
+  for (let r = 1; r <= MAX_PROSPECTING_ROUNDS; r++) {
+    assert.ok(!/ORGANIZATIONS THAT SERVE|SMALL AND MEDIUM BUSINESSES/i.test(roundSearchAngle(r, product)), `round ${r}`);
+  }
+});
+
+test("a run aims for at least 10 prospects", () => {
+  assert.ok(PROSPECTS_TARGET_PER_RUN >= 10);
+  assert.ok(MAX_PROSPECTING_ROUNDS >= 4);
 });
 
 console.log(`\nAll ${passed} tests passed.`);

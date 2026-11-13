@@ -35,8 +35,19 @@ export const SEARCH_BUDGET = {
 export const CONTACT_DISCOVERY_MAX_TURNS = 3;
 
 /**
- * A prospecting run stops starting new rounds once this many new
- * prospects have been saved in the run. Rounds used to run all 4 every
- * time, searching for more even after earlier rounds had found plenty.
+ * GOAL OF EACH PROSPECTING RUN: keep going until this many new
+ * prospects have been saved, then stop. Rounds after the target is met
+ * finish at once without calling the AI.
  */
-export const PROSPECTS_TARGET_PER_RUN = 20;
+export const PROSPECTS_TARGET_PER_RUN = 10;
+
+/**
+ * Most rounds a run may use to reach the target. Each round searches a
+ * different angle (see roundSearchAngle in prospecting.ts), so later
+ * rounds find different people rather than the same ones again. A run
+ * that reaches the target early uses fewer rounds, and costs less.
+ */
+export const MAX_PROSPECTING_ROUNDS = 8;
+
+/** Candidates each round asks the search agent for. Many are dropped later (no verified email, not a fit, duplicates), so this is above what a round usually saves. */
+export const CANDIDATES_PER_ROUND = 12;

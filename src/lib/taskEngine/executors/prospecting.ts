@@ -77,12 +77,18 @@
  */
 
 import { defineAgent, runAgent } from "@/lib/ai/runAgent";
+import {
+  CONTACT_DISCOVERY_MAX_TURNS,
+  PROSPECTS_TARGET_PER_RUN,
+  SEARCH_BUDGET,
+} from "@/lib/ai/searchBudget";
 import { z } from "zod";
 
 import type { AgentTask, Product } from "@/lib/types";
 import type { StepResult, SubtaskPlanItem, TaskExecutor } from "../types";
 
 import { getDb } from "@/lib/db";
+import { listSubtasks } from "@/lib/models/tasks";
 import { recordApiUsage } from "@/lib/models/apiUsage";
 import { LOCAL_USER_ID } from "@/lib/localUser";
 import { getSettings } from "@/lib/models/settings";
@@ -1111,11 +1117,12 @@ Do NOT invent, infer, or guess an email address under any
 circumstance — not from a name, not from a common provider pattern,
 not because it seems like a reasonable thing this person would have.
 If you cannot find this specific person's actual email, stated or
-shown somewhere you can point to, DO NOT include them as a prospect.
-Skip them and keep searching for a different individual whose contact
-information you CAN genuinely find. A smaller number of real,
-contactable prospects is the correct outcome — not a larger number
-where some are guesses.`
+shown somewhere you can point to, you may still include them when they
+are a strong prospect: leave "email" empty and include their website or
+profile URL, so the separate email-finding step has somewhere to look.
+Never include a guessed address. A prospect without a verified email is
+discarded later, so prefer people whose contact details are likely to
+be public.`
     : ""
 }
 MANDATORY AUDIENCE-FIT CHECK — before including any candidate:
@@ -1215,7 +1222,10 @@ Do not use Markdown fences.
 Do not add commentary outside the JSON.
 `,
 
-      webSearch: { searchContextSize: "high" },
+      webSearch: {
+        searchContextSize: "high",
+        maxSearchesPerStep: SEARCH_BUDGET.portfolioRefresh,
+      },
 
       // MILESTONE 5E — same fix, same reasoning as composeEmail.ts:
       // guarantees valid, schema-matching JSON at the API level rather
@@ -1671,8 +1681,12 @@ EMAIL-FIRST CONTACTABILITY
 
 Milestone 3D is CONTACTABILITY-FIRST.
 
-Only return a prospect when a legitimate publicly published email address has
-been established during the research.
+Every saved prospect must have a legitimate publicly published email address.
+If you establish one during your research, include it. If a candidate is
+otherwise strong but you could not find their email in this pass, still
+return them with "email" set to an empty string: a separate, dedicated
+step searches for each such candidate's email, and anyone whose email
+can't be verified there is discarded. Never fill the gap with a guess.
 
 The email must be supported by a public source actually inspected by you.
 
@@ -1697,7 +1711,7 @@ DO NOT:
 
 If no legitimate public email can be established:
 
-DO NOT include the prospect.
+leave "email" as an empty string. Do not guess one.
 
 Email proves contactability.
 
@@ -1898,7 +1912,7 @@ The JSON object must have this shape:
       "name": "string",
       "organization": "string",
       "role": "string",
-      "email": "publicly published email address",
+      "email": "publicly published email address, or an empty string if you could not find one",
       "prospect_type": "person | organization | partner | investor | customer | publisher | other",
       "qualification_status": "candidate | qualified | unqualified | needs_review",
       "website": "string",
@@ -1926,8 +1940,8 @@ Use an empty array when there are no items.
 
 Do not invent missing values.
 
-Because this is email-first prospecting, a genuinely unavailable email means the
-candidate MUST NOT be included.
+A genuinely unavailable email means "email" stays an empty string; the
+candidate may still be included if they are otherwise a strong prospect.
 
 ==================================================
 FINAL QUALITY GATE
@@ -1963,8 +1977,8 @@ Ask:
 
 13. Is the prospect an individual or organization appropriately represented?
 
-14. Is there a legitimate publicly published email address supported by
-    research evidence?
+14. If I included an email, is it a legitimate publicly published address
+    supported by research evidence? (If I found none, "email" is empty.)
 
 15. Would I still call this entity a prospect if I removed the sentence saying
     that it "could benefit" from the product?
@@ -2297,17 +2311,14 @@ export function normalizeCandidate(
   // just this judgment — a small schema the API can actually
   // guarantee, unlike this large one.
 
+  // RELAXED: a missing opportunity signal used to discard an otherwise
+  // valid candidate. The model often leaves this one field out (as it
+  // did with competitor_check/audience_fit_check, see MILESTONE 7G), so
+  // the fit reason, which is required above, stands in for it.
   const opportunitySignal =
-    typeof candidate.opportunity_signal ===
-      "string"
-      ? cleanText(
-          candidate.opportunity_signal
-        )
-      : "";
-
-  if (!opportunitySignal) {
-    return null;
-  }
+    (typeof candidate.opportunity_signal === "string"
+      ? cleanText(candidate.opportunity_signal)
+      : "") || fitReason;
 
 
   /**
@@ -2316,23 +2327,18 @@ export function normalizeCandidate(
    * prospects.ts deliberately keeps the model-layer field optional, but
    * Milestone 3D task-generated prospects are contactable-only.
    */
-  const email =
-    typeof candidate.email ===
-        "string" &&
-      candidate.email.trim()
-      ? candidate.email
-          .trim()
-          .toLowerCase()
+  // RELAXED: candidates without an email used to be discarded right
+  // here, so the dedicated contact search (discoverContactEmail) only
+  // ever saw candidates that already had one. Now a missing or
+  // malformed email is left empty and that search gets its chance.
+  // Nothing is saved without a verified email: the pipeline still drops
+  // any candidate the contact search can't find a real address for.
+  const rawEmail =
+    typeof candidate.email === "string" && candidate.email.trim()
+      ? candidate.email.trim().toLowerCase()
       : undefined;
-
-  if (
-    !email ||
-    !isValidEmailSyntax(
-      email
-    )
-  ) {
-    return null;
-  }
+  const email =
+    rawEmail && isValidEmailSyntax(rawEmail) ? rawEmail : undefined;
 
   // MILESTONE 8I — the email-evidence-trail check that lived here
   // (8E/8G) moved downstream, into the main pipeline, after this
@@ -2514,29 +2520,43 @@ async function classifyCandidate(
     instructions: `You judge exactly one candidate against exactly one product. Nothing else.
 
 PRODUCT: ${product.name}
-Positioning: ${product.positioning ?? "Unknown"}
+Category: ${product.category || "Unknown"}
+Description: ${product.description ?? "Unknown"}
+Problem it solves: ${product.problem ?? "Unknown"}
 Audience: ${product.audience ?? "Unknown"}
+Positioning: ${product.positioning ?? "Unknown"}
+Website: ${product.url ?? "Unknown"}
 
 CANDIDATE: ${candidateName}
 ${candidateDescription}
 
-Decide: is this candidate a competitor (sells something that does roughly the
-same job, to roughly the same buyer, as the product above)? And does this
-candidate genuinely match the product's actual described audience, not just
-someone generally successful or visible?
+Decide:
+1. Is this candidate a competitor (sells something that does roughly the
+   same job, to roughly the same buyer, as the product above)?
+2. Is this candidate a plausible member of the product's audience: someone
+   who has the problem the product solves, or an organization that serves
+   people who have it? Not just someone generally successful or visible.
+
+If the audience above is "Unknown", infer it from the description, problem
+and category. Then answer is_audience_fit true unless the candidate clearly
+falls outside that audience; uncertainty alone is not a reason for false.
 
 Return only the required JSON fields. No other output.`,
     outputType: CandidateClassificationSchema,
   });
 
-  try {
-    const result = await runAgent(classificationAgent, "Classify this candidate now.");
-    const parsed = CandidateClassificationSchema.safeParse(result.finalOutput);
-    return parsed.success ? parsed.data : null;
-  } catch (error) {
-    console.error("[prospecting] classifyCandidate failed:", error);
-    return null;
+  // A failed check discards the candidate (fail closed), so one retry
+  // keeps a passing hiccup from throwing away a good prospect.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const result = await runAgent(classificationAgent, "Classify this candidate now.");
+      const parsed = CandidateClassificationSchema.safeParse(result.finalOutput);
+      if (parsed.success) return parsed.data;
+    } catch (error) {
+      console.error(`[prospecting] classifyCandidate attempt ${attempt} failed:`, error);
+    }
   }
+  return null;
 }
 
 /**
@@ -2571,6 +2591,32 @@ const ContactDiscoverySchema = z.object({
 
 type ContactDiscoveryResult = z.infer<typeof ContactDiscoverySchema>;
 
+/**
+ * New prospects saved by this run's other, already-finished rounds.
+ * Read from each round's stored result (prospects_persisted). Any read
+ * problem counts as 0, so a failure here never skips a round wrongly.
+ */
+async function countProspectsSavedByEarlierRounds(
+  parentTaskId: string,
+  currentSubtaskId: string
+): Promise<number> {
+  try {
+    const rounds = await listSubtasks(parentTaskId);
+    let total = 0;
+    for (const round of rounds) {
+      if (round.id === currentSubtaskId || !round.result_json) continue;
+      const data = JSON.parse(round.result_json) as { prospects_persisted?: unknown };
+      if (typeof data.prospects_persisted === "number" && data.prospects_persisted > 0) {
+        total += data.prospects_persisted;
+      }
+    }
+    return total;
+  } catch (error) {
+    console.error("[prospecting] Could not count earlier rounds' prospects:", error);
+    return 0;
+  }
+}
+
 async function discoverContactEmail(
   candidateName: string,
   candidateDescription: string
@@ -2579,29 +2625,41 @@ async function discoverContactEmail(
     name: "Contact Discovery Agent",
     openaiModel: MODEL,
     instructions: `You have one job: find a real, genuine, publicly stated email
-address for exactly one specific person. Nothing else.
+address for exactly one specific prospect (a person or an organization).
+Nothing else.
 
-PERSON: ${candidateName}
+PROSPECT: ${candidateName}
 ${candidateDescription}
 
-Search for this specific person's real contact email. Good places to check:
-their personal website or portfolio (often a "Contact" or "About" page),
-freelance marketplace profiles (Upwork, Fiverr, Contra, PeoplePerHour),
-a GitHub "About" section, a posted resume or CV, or a forum post/comment
-where they explicitly invite contact ("email me at ___").
+Search for this prospect's real, current contact email. Start with any
+website or profile URL given above. Good places to check:
+- for a person: their personal website or portfolio (often a "Contact" or
+  "About" page), freelance marketplace profiles (Upwork, Fiverr, Contra,
+  PeoplePerHour), a GitHub "About" section, or a recent post where they
+  explicitly invite contact ("email me at ___");
+- for an organization: its official website's Contact, About or Team
+  page, or an official directory listing.
+Prefer current sources. Do not use an address from an old CV, an old
+forum post or an archived page: addresses like that are often dead
+mailboxes, and sending to them gets emails bounced.
 
 Do NOT guess, infer, or construct a plausible-looking email from their
-name. If you cannot find their actual email explicitly stated somewhere,
+name. If you cannot find the actual email explicitly stated somewhere,
 set email_found to false — that is a completely acceptable, expected
 outcome, not a failure to fix by guessing instead.
 
 Return only the required JSON fields. No other output.`,
     outputType: ContactDiscoverySchema,
-    webSearch: { searchContextSize: "medium" },
+    webSearch: {
+      searchContextSize: "medium",
+      maxSearchesPerStep: SEARCH_BUDGET.contactDiscovery,
+    },
   });
 
   try {
-    const result = await runAgent(discoveryAgent, "Find this person's real email now.");
+    const result = await runAgent(discoveryAgent, "Find this person's real email now.", {
+      maxTurns: CONTACT_DISCOVERY_MAX_TURNS,
+    });
     const parsed = ContactDiscoverySchema.safeParse(result.finalOutput);
     return parsed.success ? parsed.data : null;
   } catch (error) {
@@ -2900,6 +2958,40 @@ export const prospectingExecutor:
       product.name;
 
     /* ---------------------------------------------------------------------- */
+    /* COST: stop early once this run has found enough                        */
+    /* ---------------------------------------------------------------------- */
+
+    /**
+     * Every round runs a web-search agent plus a contact search for each
+     * new candidate, all billed per search. Rounds used to run all 4 even
+     * when earlier rounds had already saved plenty of prospects. Once the
+     * run reaches PROSPECTS_TARGET_PER_RUN, later rounds finish at once,
+     * without calling the AI.
+     */
+    const savedEarlierThisRun =
+      await countProspectsSavedByEarlierRounds(
+        parent.id,
+        subtask.id
+      );
+
+    if (
+      savedEarlierThisRun >=
+      PROSPECTS_TARGET_PER_RUN
+    ) {
+      return {
+        success: true,
+        summary: `Skipped round ${roundNumber} of ${totalRounds}: earlier rounds already saved ${savedEarlierThisRun} prospects for ${authoritativeProductName} (target ${PROSPECTS_TARGET_PER_RUN}).`,
+        resultData: {
+          prospecting_type: "web_prospecting",
+          evidence_status: "skipped_target_reached",
+          prospects_persisted: 0,
+          saved_earlier_this_run: savedEarlierThisRun,
+          task_id: subtask.id,
+        },
+      };
+    }
+
+    /* ---------------------------------------------------------------------- */
     /* Existing prospects — fetched BEFORE the agent runs                     */
     /* ---------------------------------------------------------------------- */
 
@@ -3042,7 +3134,10 @@ Do not return explanatory prose outside the JSON object.
          * which could reject the response before this executor could inspect
          * it.
          */
-        webSearch: { searchContextSize: "high" },
+        webSearch: {
+          searchContextSize: "high",
+          maxSearchesPerStep: SEARCH_BUDGET.prospectingRound,
+        },
       });
 
     try {
@@ -3242,18 +3337,32 @@ Do not return explanatory prose outside the JSON object.
           const email = c.email ?? "";
           const candidateEvidence = c.evidence ?? [];
 
-          const alreadyHasTrail = candidateEvidence.some(
-            (item) =>
-              item.source.toLowerCase().includes(email) ||
-              item.observation.toLowerCase().includes(email)
-          );
+          // An empty email would "match" every string, so it can never
+          // count as an evidence trail.
+          const alreadyHasTrail =
+            email !== "" &&
+            isValidEmailSyntax(email) &&
+            candidateEvidence.some(
+              (item) =>
+                item.source.toLowerCase().includes(email) ||
+                item.observation.toLowerCase().includes(email)
+            );
           if (alreadyHasTrail) {
             return c;
           }
 
           const discovery = await discoverContactEmail(
             c.name,
-            `${c.fit_reason ?? ""} ${c.opportunity_signal ?? ""}`.trim()
+            [
+              c.prospect_type === "organization" ? "Type: organization" : "Type: individual",
+              c.organization ? `Organization: ${c.organization}` : "",
+              c.role ? `Role: ${c.role}` : "",
+              c.website ? `Website: ${c.website}` : "",
+              c.public_profile_url ? `Public profile: ${c.public_profile_url}` : "",
+              `${c.fit_reason ?? ""} ${c.opportunity_signal ?? ""}`.trim(),
+            ]
+              .filter(Boolean)
+              .join("\n")
           );
 
           if (!discovery || !discovery.email_found || !isValidEmailSyntax(discovery.email)) {

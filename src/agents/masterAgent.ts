@@ -24,6 +24,7 @@
   */
 
 import { defineAgent, type AgentSpec } from "@/lib/ai/runAgent";
+import { SEARCH_BUDGET } from "@/lib/ai/searchBudget";
 import { INNOCENT_INTELLIGENCE_INSTRUCTIONS } from "./instructions";
 import { createTaskTool } from "./tools/createTaskTool";
 import { getProductIntelligenceTool } from "./tools/getProductIntelligenceTool";
@@ -578,7 +579,7 @@ functionTools: [
   getProductInsightsTool,
   searchProductDocumentsTool,
 ],
-webSearch: { searchContextSize: "medium" },
+webSearch: { searchContextSize: "medium", maxSearchesPerStep: SEARCH_BUDGET.chat },
 
 });
 }

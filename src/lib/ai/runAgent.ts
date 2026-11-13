@@ -53,8 +53,17 @@ export interface AgentSpec<TOutput extends z.ZodType | undefined = undefined> {
   instructions: string;
   /** The OpenAI model this agent was tuned for; mapped to a Claude tier when Anthropic is selected. */
   openaiModel: string;
-  /** true = webSearchTool() with defaults; an object is passed straight to webSearchTool(). */
-  webSearch?: boolean | { searchContextSize?: SearchContextSize };
+  /**
+   * true = web search with defaults. As an object:
+   *  - searchContextSize: passed to OpenAI's webSearchTool(); on Claude it
+   *    sets the default number of searches per step.
+   *  - maxSearchesPerStep: hard cap on searches the model may run in one
+   *    step (one model response). Web searches are billed per search on
+   *    both providers (~1¢ each), so this bounds the cost of a run:
+   *    at most maxSearchesPerStep × maxTurns searches. Sent to OpenAI as
+   *    max_tool_calls and to Claude as the web_search tool's max_uses.
+   */
+  webSearch?: boolean | { searchContextSize?: SearchContextSize; maxSearchesPerStep?: number };
   /** Custom tools created with tool() from @openai/agents. */
   functionTools?: FunctionTool<any, any, any>[];
   /** Zod object schema for structured output. Omit for plain-text output. */
@@ -103,17 +112,22 @@ const MAX_SUBMIT_NUDGES = 2;
 /** Searches allowed per Claude request, mirroring OpenAI's searchContextSize. */
 const SEARCH_MAX_USES: Record<SearchContextSize, number> = { low: 3, medium: 5, high: 8 };
 
+/** Test seam for the OpenAI path: the same signature as @openai/agents run(). */
+type OpenAIRun = (agent: any, input: any, options?: any) => Promise<any>;
+
 export async function runAgent<TOutput extends z.ZodType | undefined = undefined>(
   spec: AgentSpec<TOutput>,
   input: string | ChatTurn[],
   options: RunAgentOptions = {},
-  deps: { claude?: ClaudeCall; provider?: AiProvider } = {}
+  deps: { claude?: ClaudeCall; provider?: AiProvider; openaiRun?: OpenAIRun } = {}
 ): Promise<AgentRunResult<FinalOf<TOutput>>> {
   const provider = deps.provider ?? (await getAiProvider());
   const model = resolveModel(provider, spec.openaiModel);
 
   if (provider === "openai") {
-    return runWithOpenAI(spec, input, options, model) as Promise<AgentRunResult<FinalOf<TOutput>>>;
+    return runWithOpenAI(spec, input, options, model, deps.openaiRun ?? run) as Promise<
+      AgentRunResult<FinalOf<TOutput>>
+    >;
   }
   return runWithClaude(spec, input, options, model, deps.claude ?? callClaude) as Promise<
     AgentRunResult<FinalOf<TOutput>>
@@ -124,28 +138,68 @@ export async function runAgent<TOutput extends z.ZodType | undefined = undefined
 /* OpenAI — the original behaviour                                            */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Set if OpenAI ever rejects max_tool_calls for a model, so later runs on
+ * this instance don't pay for a failed request first.
+ */
+let openaiRejectsMaxToolCalls = false;
+
+function isMaxToolCallsRejection(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /max_tool_calls/i.test(message);
+}
+
+/** Number of hosted web searches in a run's items (each is billed separately). */
+export function countOpenAIWebSearches(items: ReadonlyArray<any>): number {
+  let count = 0;
+  for (const item of items) {
+    const raw = item?.rawItem;
+    if (
+      item?.type === "tool_call_item" &&
+      raw?.type === "hosted_tool_call" &&
+      raw?.name === "web_search_call"
+    ) {
+      count++;
+    }
+  }
+  return count;
+}
+
 async function runWithOpenAI(
   spec: AgentSpec<z.ZodType | undefined>,
   input: string | ChatTurn[],
   options: RunAgentOptions,
-  model: string
+  model: string,
+  openaiRun: OpenAIRun
 ): Promise<AgentRunResult<unknown>> {
+  const searchOptions = spec.webSearch && spec.webSearch !== true ? spec.webSearch : null;
   const tools = [
     ...(spec.functionTools ?? []),
     ...(spec.webSearch === true
       ? [webSearchTool()]
-      : spec.webSearch
-        ? [webSearchTool(spec.webSearch)]
+      : searchOptions
+        ? [
+            webSearchTool(
+              searchOptions.searchContextSize
+                ? { searchContextSize: searchOptions.searchContextSize }
+                : {}
+            ),
+          ]
         : []),
   ];
 
-  const agent = new Agent<any, any>({
-    name: spec.name,
-    model,
-    instructions: spec.instructions,
-    tools,
-    ...(spec.outputType ? { outputType: spec.outputType } : {}),
-  });
+  const maxSearches = searchOptions?.maxSearchesPerStep;
+
+  const buildAgent = (withCap: boolean) =>
+    new Agent<any, any>({
+      name: spec.name,
+      model,
+      instructions: spec.instructions,
+      tools,
+      ...(spec.outputType ? { outputType: spec.outputType } : {}),
+      // Extra request fields go to the Responses API as-is.
+      ...(withCap ? { modelSettings: { providerData: { max_tool_calls: maxSearches } } } : {}),
+    });
 
   const agentInput: string | AgentInputItem[] =
     typeof input === "string"
@@ -164,7 +218,19 @@ async function runWithOpenAI(
   if (options.maxTurns !== undefined) runOptions.maxTurns = options.maxTurns;
   if (options.context !== undefined) runOptions.context = options.context;
 
-  const result = await run(agent, agentInput, runOptions as any);
+  const wantCap = maxSearches !== undefined && !openaiRejectsMaxToolCalls;
+  let result: any;
+  try {
+    result = await openaiRun(buildAgent(wantCap), agentInput, runOptions);
+  } catch (error) {
+    // Safety net: if a model ever refuses the cap, run uncapped rather
+    // than failing the task. A rejected parameter fails the very first
+    // request, before any tool has run, so retrying is safe.
+    if (!wantCap || !isMaxToolCallsRejection(error)) throw error;
+    console.warn("[ai/runAgent] OpenAI rejected max_tool_calls; running without the search cap.", error);
+    openaiRejectsMaxToolCalls = true;
+    result = await openaiRun(buildAgent(false), agentInput, runOptions);
+  }
 
   const toolOutputs: string[] = [];
   for (const item of result.newItems) {
@@ -180,7 +246,9 @@ async function runWithOpenAI(
     usage: {
       inputTokens: result.state.usage.inputTokens,
       outputTokens: result.state.usage.outputTokens,
-      webSearchRequests: 0,
+      // Previously always 0, so the Usage page left out OpenAI's
+      // per-search fees entirely. They're now counted and priced.
+      webSearchRequests: countOpenAIWebSearches(result.newItems),
     },
     toolOutputs,
   };
@@ -248,7 +316,12 @@ async function runWithClaude(
   if (spec.webSearch) {
     const size: SearchContextSize =
       spec.webSearch === true ? "medium" : spec.webSearch.searchContextSize ?? "medium";
-    tools.push({ type: "web_search_20250305", name: "web_search", max_uses: SEARCH_MAX_USES[size] });
+    const cap = spec.webSearch === true ? undefined : spec.webSearch.maxSearchesPerStep;
+    tools.push({
+      type: "web_search_20250305",
+      name: "web_search",
+      max_uses: cap ?? SEARCH_MAX_USES[size],
+    });
   }
 
   const submit = spec.outputType ? submitSchemaFor(spec.outputType) : null;

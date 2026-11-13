@@ -28,6 +28,7 @@ import type { AgentTask } from "@/lib/types";
 import type { StepResult, SubtaskPlanItem, TaskExecutor } from "../types";
 
 import { defineAgent, runAgent } from "@/lib/ai/runAgent";
+import { SEARCH_BUDGET } from "@/lib/ai/searchBudget";
 import {
   listProspects,
   getProspectById,
@@ -249,7 +250,7 @@ export const deepQualificationExecutor: TaskExecutor = {
       name: "Deep Qualification Reviewer",
       openaiModel: MODEL,
       instructions: SYSTEM_PROMPT,
-      webSearch: true,
+      webSearch: { maxSearchesPerStep: SEARCH_BUDGET.deepQualification },
     });
 
     const prompt = buildUserPrompt({

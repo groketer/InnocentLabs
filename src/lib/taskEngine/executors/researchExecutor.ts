@@ -24,6 +24,8 @@
  */
 
 import { defineAgent, runAgent } from "@/lib/ai/runAgent";
+import { SEARCH_BUDGET } from "@/lib/ai/searchBudget";
+import { recordApiUsage } from "@/lib/models/apiUsage";
 
 import type { AgentTask } from "@/lib/types";
 import type { StepResult, TaskExecutor } from "../types";
@@ -728,7 +730,7 @@ export const researchExecutor: TaskExecutor = {
       name: "Innocent Intelligence Research Agent",
       openaiModel: MODEL,
       instructions: buildResearchInstructions(),
-      webSearch: { searchContextSize: "high" },
+      webSearch: { searchContextSize: "high", maxSearchesPerStep: SEARCH_BUDGET.research },
     });
 
     try {
@@ -739,6 +741,17 @@ export const researchExecutor: TaskExecutor = {
           maxTurns: MAX_TURNS,
         }
       );
+
+      // Research runs were never recorded, so their cost was missing
+      // from the Usage page.
+      await recordApiUsage({
+        user_id: task.user_id,
+        source: "research",
+        model: result.model,
+        input_tokens: result.usage.inputTokens,
+        output_tokens: result.usage.outputTokens,
+        web_search_requests: result.usage.webSearchRequests,
+      });
 
       const report =
         typeof result.finalOutput === "string"

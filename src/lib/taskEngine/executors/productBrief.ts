@@ -27,6 +27,7 @@
  */
 
 import { defineAgent, runAgent } from "@/lib/ai/runAgent";
+import { SEARCH_BUDGET } from "@/lib/ai/searchBudget";
 import { z } from "zod";
 
 import type { AgentTask } from "@/lib/types";
@@ -172,7 +173,7 @@ async function generateBrief(parent: AgentTask): Promise<StepResult> {
     // enforcement with a live web search tool has previously caused the
     // SDK to reject valid responses before this executor could inspect
     // them (same issue documented in the prospecting executor).
-    webSearch: { searchContextSize: "high" },
+    webSearch: { searchContextSize: "high", maxSearchesPerStep: SEARCH_BUDGET.productBrief },
   });
 
   const request = `Research this product by visiting its real website:\n\nName: ${product.name}\nURL: ${product.url}`;

@@ -27,8 +27,21 @@ const PRICING_PER_MILLION_TOKENS: Record<string, { input: number; output: number
   "claude-opus-5-5": { input: 4.0, output: 20.0 },
 };
 
-/** Claude's web search is billed per search on top of tokens: $10 per 1,000. */
-const CLAUDE_WEB_SEARCH_COST_USD = 0.01;
+/**
+ * Web search is billed per search on top of tokens, on both providers:
+ * $10 per 1,000 searches.
+ */
+const WEB_SEARCH_COST_USD = 0.01;
+
+/**
+ * OpenAI also bills the search results of these models as a fixed block
+ * of 8,000 input tokens per search, which isn't in the response's token
+ * counts. (Claude's search results are already in its input tokens.)
+ */
+const OPENAI_SEARCH_TOKEN_BLOCK: Record<string, number> = {
+  "gpt-4.1-mini": 8000,
+  "gpt-4o-mini": 8000,
+};
 
 const DEFAULT_PRICING = PRICING_PER_MILLION_TOKENS["gpt-4.1-mini"];
 
@@ -41,6 +54,7 @@ export type UsageSource =
   | "deep_qualification"
   | "product_brief"
   | "content_draft"
+  | "research"
   | "chat";
 
 function estimateCost(
@@ -56,10 +70,11 @@ function estimateCost(
   if (model === "claude-haiku-5-5" && inputTokens > 100_000) {
     rate = { input: 0.5, output: 2.5 };
   }
+  const searchTokens = webSearchRequests * (OPENAI_SEARCH_TOKEN_BLOCK[model] ?? 0);
   return (
-    (inputTokens / 1_000_000) * rate.input +
+    ((inputTokens + searchTokens) / 1_000_000) * rate.input +
     (outputTokens / 1_000_000) * rate.output +
-    webSearchRequests * CLAUDE_WEB_SEARCH_COST_USD
+    webSearchRequests * WEB_SEARCH_COST_USD
   );
 }
 
@@ -69,7 +84,7 @@ export async function recordApiUsage(input: {
   model: string;
   input_tokens: number;
   output_tokens: number;
-  /** Claude web searches in this call (billed per search). Omit for OpenAI. */
+  /** Web searches in this call (billed per search, on both providers). */
   web_search_requests?: number;
 }): Promise<void> {
   try {

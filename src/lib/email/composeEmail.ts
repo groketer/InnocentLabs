@@ -30,6 +30,7 @@
 import { tool } from "@openai/agents";
 import { defineAgent, runAgent } from "@/lib/ai/runAgent";
 import { assertAiConfigured } from "@/lib/ai/provider";
+import { SEARCH_BUDGET } from "@/lib/ai/searchBudget";
 import { z } from "zod";
 import type { Prospect } from "@/lib/models/prospects";
 import type { Product } from "@/lib/types";
@@ -197,6 +198,17 @@ const ComposeEmailOutputSchema = z.object({
   reason: z.string().optional(),
 });
 
+/**
+ * True when the product's stored details are too thin to write from, so
+ * the composer should look at the product's own page first. This is the
+ * only case the instructions call for a web search.
+ */
+export function productNeedsLookup(product: Product): boolean {
+  const richFieldCount = [product.problem, product.audience, product.positioning, product.features]
+    .filter(Boolean).length;
+  return richFieldCount <= 1 && Boolean(product.url);
+}
+
 function buildUserPrompt(input: ComposeEmailInput): string {
   const { prospect, product, step, previousSends } = input;
 
@@ -244,13 +256,15 @@ function buildUserPrompt(input: ComposeEmailInput): string {
     "This product may have uploaded reference documents (e.g. a book) — use search_product_knowledge if referencing specific, real content from them would make this email more relevant to this particular prospect. Not every email needs this; use it when it would genuinely help, not by default."
   );
 
-  const richFieldCount = [product.problem, product.audience, product.positioning, product.features]
-    .filter(Boolean).length;
-
-  if (richFieldCount <= 1 && product.url) {
+  if (productNeedsLookup(product)) {
     lines.push("");
     lines.push(
       `NOTE: this product's stored intelligence is thin. Visit ${product.url} yourself before writing.`
+    );
+  } else {
+    lines.push("");
+    lines.push(
+      "Web search is not available for this email: everything you need about the product and the prospect is above. Write from it."
     );
   }
 
@@ -320,11 +334,17 @@ export async function composeOutreachEmail(
 ): Promise<ComposeEmailResult> {
   await assertAiConfigured("compose email content");
 
+  // COST: web search used to be on for every email and follow-up, and
+  // with the tool available the model tended to search even when the
+  // stored product details were complete. Each search is billed (~1¢),
+  // so it's now only offered when the product genuinely needs a lookup.
+  const needsLookup = productNeedsLookup(input.product);
+
   const agent = defineAgent({
     name: "Email Composer",
     openaiModel: MODEL,
     instructions: SYSTEM_PROMPT,
-    webSearch: true,
+    ...(needsLookup ? { webSearch: { maxSearchesPerStep: SEARCH_BUDGET.emailCompose } } : {}),
     functionTools: [buildKnowledgeSearchTool(input.product.id)],
     outputType: ComposeEmailOutputSchema,
   });

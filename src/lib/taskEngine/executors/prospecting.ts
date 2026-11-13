@@ -102,6 +102,7 @@ import {
 
 import {
   createProspect,
+  listAllProspectsForProduct,
   listProspects,
   type Prospect,
   type ProspectType,
@@ -3011,6 +3012,20 @@ export const prospectingExecutor:
         }
       );
 
+    /**
+     * FIX: `existing` above is only the product's 50 newest prospects
+     * (listProspects' default), which is fine for the "already found"
+     * list in the prompt but not for duplicate checks: anyone saved
+     * earlier could be found again, pass the check, and then be refused
+     * by the database's one-email-per-product rule. Duplicate checks use
+     * every prospect for the product instead.
+     */
+    const dedupePool =
+      await listAllProspectsForProduct(
+        parent.user_id,
+        authoritativeProductId
+      );
+
     const alreadyFoundSummary =
       existing.length > 0
         ? existing
@@ -3292,7 +3307,7 @@ Do not return explanatory prose outside the JSON object.
       // either paid call, means that spend never happens for something
       // that was always going to be discarded.
       const deduplicatedCandidates = individualsFiltered.filter(
-        (c) => !isDuplicateProspect(existing, c, authoritativeProductId)
+        (c) => !isDuplicateProspect(dedupePool, c, authoritativeProductId)
       );
 
       // MILESTONE 8H — the real, structural competitor/audience-fit
@@ -3505,13 +3520,16 @@ Do not return explanatory prose outside the JSON object.
       const rejected:
         string[] = [];
 
+      /** Why each rejected candidate couldn't be saved, for the task result. */
+      const saveFailures: Array<{ name: string; reason: string }> = [];
+
       for (
         const candidate of
           candidates
       ) {
         if (
           isDuplicateProspect(
-            existing,
+            dedupePool,
             candidate,
             authoritativeProductId
           )
@@ -3599,10 +3617,20 @@ Do not return explanatory prose outside the JSON object.
            * identical candidates returned in the same model response cannot
            * both be persisted.
            */
-          existing.push(
+          dedupePool.push(
             prospect
           );
         } catch (error) {
+          const reason =
+            error instanceof Error ? error.message : String(error);
+
+          // The database allows one prospect per email per product. If
+          // this email is already saved, it's a duplicate, not a failure.
+          if (/duplicate key|unique constraint|idx_prospects_unique_email_per_product/i.test(reason)) {
+            duplicates.push(candidate.name);
+            continue;
+          }
+
           // MILESTONE 5T — this used to silently swallow the actual
           // error from createProspect(), surfacing only the generic
           // "Prospecting produced candidates, but none could be
@@ -3617,6 +3645,10 @@ Do not return explanatory prose outside the JSON object.
           rejected.push(
             candidate.name
           );
+          saveFailures.push({
+            name: candidate.name,
+            reason: reason.slice(0, 300),
+          });
         }
       }
 
@@ -3627,10 +3659,26 @@ Do not return explanatory prose outside the JSON object.
             ? "contactable_candidates_found_but_none_persisted"
             : "no_valid_contactable_candidates_found";
 
+      // When nothing new was saved, say why, so the round's message
+      // explains itself instead of a generic "none could be persisted".
+      const noneSavedReason = [
+        duplicates.length > 0
+          ? `${duplicates.length} ${duplicates.length === 1 ? "was" : "were"} already saved for this product`
+          : "",
+        saveFailures.length > 0
+          ? `${saveFailures.length} failed to save (${saveFailures[0].reason.slice(0, 120)})`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("; ");
+
       return {
+        // Rounds whose candidates were all duplicates did their job; only
+        // real save errors mark the round as failed.
         success:
           persisted.length > 0 ||
-          candidates.length === 0,
+          candidates.length === 0 ||
+          saveFailures.length === 0,
 
         summary:
           persisted.length > 0
@@ -3642,7 +3690,7 @@ Do not return explanatory prose outside the JSON object.
               } for ${authoritativeProductName}.`
             : candidates.length === 0
               ? `No evidence-backed contactable prospects were identified for ${authoritativeProductName}.`
-              : "Prospecting produced candidates, but none could be persisted.",
+              : `Found ${candidates.length} contactable candidate${candidates.length === 1 ? "" : "s"} for ${authoritativeProductName}, but none were new: ${noneSavedReason || "no reason recorded"}.`,
 
         transientFailure:
           false,
@@ -3731,6 +3779,9 @@ Do not return explanatory prose outside the JSON object.
 
           rejected_candidates:
             rejected,
+
+          save_failures:
+            saveFailures,
 
           evidence_gaps:
             structuredOutput.evidence_gaps ??

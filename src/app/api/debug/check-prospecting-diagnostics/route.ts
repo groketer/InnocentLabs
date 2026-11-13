@@ -62,6 +62,9 @@ export async function GET(req: NextRequest) {
       // one was visible here before this.
       prospectsPersisted: data?.prospects_persisted ?? null,
       rejectionBreakdown: data?.rejection_breakdown ?? null,
+      // Candidates that passed every filter but weren't saved, and why.
+      duplicatesSkipped: data?.duplicates_skipped ?? null,
+      saveFailures: data?.save_failures ?? "not present — this run predates save-failure recording",
     };
   });
 

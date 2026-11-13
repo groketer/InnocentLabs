@@ -899,6 +899,41 @@ export async function getProspectById(
  * All filters are parameterized. The LIMIT value is normalized to prevent
  * invalid or unexpectedly large queries.
  */
+/**
+ * Every prospect this user has for one product, with no row limit.
+ *
+ * For duplicate checks. listProspects() returns at most 200 rows (50 by
+ * default), and prospecting used that default, so it only knew about a
+ * product's 50 newest prospects: anyone saved earlier could be found
+ * again, pass the duplicate check, and then be refused by the database's
+ * one-email-per-product rule, leaving the run with nothing saved.
+ */
+export async function listAllProspectsForProduct(
+  userId: string,
+  productId: string
+): Promise<Prospect[]> {
+  const normalizedUserId = userId.trim();
+  const normalizedProductId = productId.trim();
+  if (!normalizedUserId || !normalizedProductId) {
+    return [];
+  }
+
+  const db = await getDb();
+  const result = await db.execute({
+    sql: `
+      SELECT *
+      FROM prospects
+      WHERE user_id = @user_id
+        AND product_id = @product_id
+      ORDER BY created_at DESC
+    `,
+    args: { user_id: normalizedUserId, product_id: normalizedProductId } as InArgs,
+  });
+
+  const rows = result.rows as unknown as Array<Record<string, unknown>>;
+  return rows.map(mapProspectRow);
+}
+
 export async function listProspects(
   userId: string,
   options?: {
